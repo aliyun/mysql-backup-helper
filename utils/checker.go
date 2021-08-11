@@ -38,7 +38,7 @@ func checkVersion(value string) {
 	fmt.Println("检查MySQL版本...")
 	v := getVersion(value)
 	checkItem := "版本"
-	if v.major == 5 && v.minor == 7 && v.micro <= 29 {
+	if v.major == 5 && v.minor == 7 && v.micro <= 32 {
 		output(checkItem, value, "", true)
 	} else if v.major == 8 && v.minor == 0 && v.micro <= 18 {
 		output(checkItem, value, "", true)
