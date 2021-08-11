@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+  "github.com/fatih/color"
+
 )
 
 type Option struct {
@@ -33,14 +35,16 @@ func Check(options map[string]string) {
 }
 
 func checkVersion(value string) {
-	fmt.Println("检查MySQL版本(支持5.7.29以下小版本)...")
+	fmt.Println("检查MySQL版本...")
 	v := getVersion(value)
 	checkItem := "版本"
 	if v.major == 5 && v.minor == 7 && v.micro <= 29 {
 		output(checkItem, value, "", true)
-	} else {
-		output(checkItem, value, "不支持当前版本", false)
-		flag = false
+	} else if v.major == 8 && v.minor == 0 && v.micro <= 18 {
+		output(checkItem, value, "", true)
+  } else {
+		output(checkItem, value, "可能无法兼容", false)
+    fmt.Println(color.HiWhiteString("\t您需要通过物理备份迁移到云上的数据库小版本较高，云上MySQL可能无法兼容该版本的数据文件，可在MySQL全量备份上云帮助文档页面确认"))
 	}
 	fmt.Println()
 }
