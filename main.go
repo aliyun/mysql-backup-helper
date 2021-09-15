@@ -4,21 +4,33 @@ import (
 	"backup-helper/utils"
 	"flag"
 	"fmt"
-	"golang.org/x/term"
+	"github.com/jeandeaual/go-locale"
 	"os"
 	"strings"
+
+	"github.com/mylukin/easy-i18n/i18n"
+	"golang.org/x/term"
+	"golang.org/x/text/language"
 )
 
 type CmdOpt struct {
-	host string
-	port int
-	user string
+	host     string
+	port     int
+	user     string
 	password string
 }
 
 func main() {
+	utils.InitEn(language.English)
+	userLocales, _ := locale.GetLocales()
+	l := language.English
+	if strings.HasSuffix(strings.ToUpper(userLocales[0]), "CN") {
+		l = language.SimplifiedChinese
+	}
+	i18n.SetLang(l)
+
 	opt := parseCmd()
-	fmt.Println(fmt.Sprintf("连接数据库host=%s port=%d user=%s", opt.host, opt.port, opt.user))
+	fmt.Println(i18n.Sprintf("连接数据库host=%s port=%d user=%s", opt.host, opt.port, opt.user))
 	outputHeader()
 	db := utils.GetConnection(opt.host, opt.port, opt.user, opt.password)
 	defer db.Close()
@@ -35,7 +47,7 @@ func parseCmd() CmdOpt {
 	flag.StringVar(&password, "password", "", "Password to use when connecting to server. If password is not given it's asked from the tty.")
 	flag.Parse()
 
-	opts := CmdOpt {host, port, user, password}
+	opts := CmdOpt{host, port, user, password}
 
 	if len(os.Args) < 2 {
 		flag.Usage()
@@ -43,7 +55,7 @@ func parseCmd() CmdOpt {
 	}
 
 	if "" == password {
-		fmt.Printf("请输入数据库密码: ")
+		i18n.Printf("请输入数据库密码: ")
 		pwd, _ := term.ReadPassword(0)
 		fmt.Println()
 		opts.password = string(pwd)
