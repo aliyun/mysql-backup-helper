@@ -2,14 +2,14 @@ package utils
 
 import (
 	"fmt"
+	"github.com/fatih/color"
+	"github.com/mylukin/easy-i18n/i18n"
 	"strconv"
 	"strings"
-  "github.com/fatih/color"
-
 )
 
 type Option struct {
-	name string
+	name  string
 	value string
 }
 
@@ -20,7 +20,6 @@ type Version struct {
 }
 
 var flag = true
-const checkVar = "参数"
 
 func Check(options map[string]string) {
 	checkVersion(options["version"])
@@ -29,22 +28,24 @@ func Check(options map[string]string) {
 	if flag {
 		cmd := "\tinnobackupex --backup --host=<host> --port=<port> --user=<dbuser> --password=<password> --stream=xbstream --compress /home/mysql/backup  > /home/mysql/backup/backup_qp.xb"
 		fmt.Println()
-		fmt.Println("备份命令参考(Percona XtraBackup Version 2.4):")
+		i18n.Printf("备份命令参考(Percona XtraBackup):")
+		fmt.Println()
 		fmt.Println(cmd)
 	}
 }
 
 func checkVersion(value string) {
-	fmt.Println("检查MySQL版本...")
+	i18n.Printf("检查MySQL版本...")
+	fmt.Println()
 	v := getVersion(value)
-	checkItem := "版本"
+	checkItem := i18n.Sprintf("版本")
 	if v.major == 5 && v.minor == 7 && v.micro <= 32 {
 		output(checkItem, value, "", true)
 	} else if v.major == 8 && v.minor == 0 && v.micro <= 18 {
 		output(checkItem, value, "", true)
-  } else {
-		output(checkItem, value, "可能无法兼容", false)
-    fmt.Println(color.HiWhiteString("\t您需要通过物理备份迁移到云上的数据库小版本较高，云上MySQL可能无法兼容该版本的数据文件，可在MySQL全量备份上云帮助文档页面确认"))
+	} else {
+		output(checkItem, value, i18n.Sprintf("可能无法兼容"), false)
+		fmt.Printf(color.HiWhiteString(i18n.Sprintf("\t您需要通过物理备份迁移到云上的数据库小版本较高，云上MySQL可能无法兼容该版本的数据文件，可在MySQL全量备份上云帮助文档页面确认")))
 	}
 	fmt.Println()
 }
@@ -56,30 +57,32 @@ func checkInnodbFilePath(options map[string]string) {
 	tokens := strings.Split(val, ";")
 	checkValue := key + "=" + val
 	if len(tokens) > 1 {
-		output(checkVar, checkValue, "不支持多参数", false)
+		output(i18n.Sprintf("参数"), checkValue, i18n.Sprintf("不支持多参数"), false)
 		flag = false
 	} else {
 		filename := strings.Split(tokens[0], ":")[0]
 		if filename == "ibdata1" {
-			output(checkVar, checkValue, "", true)
+			output(i18n.Sprintf("参数"), checkValue, "", true)
 		} else {
-			output(checkVar, checkValue, "建议参数: ibdata1", false)
+			output(i18n.Sprintf("参数"), checkValue, i18n.Sprintf("建议参数: ibdata1"), false)
 			flag = false
 		}
 	}
 }
 
 func checkBackup(options map[string]string) {
-	fmt.Println("检查备份相关参数...")
+	i18n.Printf("检查备份相关参数...")
+	fmt.Println()
 	checkInnodbFilePath(options)
-	fmt.Println("备份相关参数完毕...")
+	i18n.Printf("备份相关参数完毕...")
 	fmt.Println()
 }
 
 func checkReplication(options map[string]string) {
-	fmt.Println("检查复制参数中(以下参数影响主备复制, 并不影响备份)...")
+	i18n.Printf("检查复制参数中(以下参数影响主备复制, 并不影响备份)...")
+	fmt.Println()
 
-	miss := []string {"server_id", "log_bin"}
+	miss := []string{"server_id", "log_bin"}
 	for _, m := range miss {
 		checkMissVariable(m, options[m])
 	}
@@ -92,24 +95,25 @@ func checkReplication(options map[string]string) {
 		if userVal, ok := options[item.name]; ok {
 			checkValue := fmt.Sprintf("%s=%s", item.name, userVal)
 			if userVal != item.value {
-				suggest := fmt.Sprintf("建议参数: %s", item.value)
-				output("参数", checkValue, suggest, false)
+				suggest := i18n.Sprintf("建议参数: %s", item.value)
+				fmt.Println()
+				output(i18n.Sprintf("参数"), checkValue, suggest, false)
 			} else {
-				output("参数", checkValue, "", true)
+				output(i18n.Sprintf("参数"), checkValue, "", true)
 			}
 		}
 	}
 
-	fmt.Println("复制参数检查完毕")
+	i18n.Printf("复制参数检查完毕")
 	fmt.Println()
 }
 
 func checkMissVariable(key, value string) {
 	checkValue := key + "=" + value
 	if value == "0" {
-		output(checkVar, checkValue, "参数未设置", false)
+		output(i18n.Sprintf("参数"), checkValue, i18n.Sprintf("参数未设置"), false)
 	} else {
-		output(checkVar, checkValue, "", true)
+		output(i18n.Sprintf("参数"), checkValue, "", true)
 	}
 }
 
@@ -122,5 +126,5 @@ func getVersion(value string) Version {
 	major, _ := strconv.Atoi(vers[0])
 	minor, _ := strconv.Atoi(vers[1])
 	micro, _ := strconv.Atoi(vers[2])
-	return Version {major, minor, micro}
+	return Version{major, minor, micro}
 }
