@@ -74,7 +74,7 @@ func producer(c chan []byte) {
 	}
 }
 
-func sender(data []byte, index int, bucket *oss.Bucket , traffic int64) (part oss.UploadPart) {
+func sender(data []byte, index int, bucket *oss.Bucket, traffic int64) (part oss.UploadPart) {
 
 	reader := bytes.NewReader(data)
 	part, err := bucket.UploadPart(imur, reader, int64(len(data)), index, oss.Progress(&OssProgressListener{}), oss.TrafficLimitHeader(traffic))
@@ -89,14 +89,14 @@ func sender(data []byte, index int, bucket *oss.Bucket , traffic int64) (part os
 	return part
 }
 
-func consumer(ch chan []byte, bucket *oss.Bucket, parts_ch chan []oss.UploadPart , traffic int64) {
+func consumer(ch chan []byte, bucket *oss.Bucket, parts_ch chan []oss.UploadPart, traffic int64) {
 
 	var parts []oss.UploadPart
 	index := 1
 
 	for {
 		if data, ok := <-ch; ok {
-			part := sender(data, index, bucket , traffic)
+			part := sender(data, index, bucket, traffic)
 			parts = append(parts, part)
 			index += 1
 			waitSender.Done()
@@ -115,6 +115,7 @@ func main() {
 	var endpoint string
 	var accessKeyId string
 	var accessKeySecret string
+	var securityToken string
 	var bucketName string
 	var objectName string
 	var buffer int
@@ -123,6 +124,7 @@ func main() {
 	flag.StringVar(&endpoint, "endpoint", "http://oss-cn-hangzhou.aliyuncs.com", "oss endpoint")
 	flag.StringVar(&accessKeyId, "accessKeyId", "", "accessKeyId")
 	flag.StringVar(&accessKeySecret, "accessKeySecret", "", "accessKeySecret")
+	flag.StringVar(&securityToken, "securityToken", "", "securityToken")
 	flag.StringVar(&bucketName, "bucketName", "", "bucketName")
 	flag.StringVar(&objectName, "objectName", "", "objectName")
 	flag.IntVar(&size, "size", 1024*1024*100, "upload:block size default 100Mb")
@@ -148,7 +150,13 @@ func main() {
 	}
 
 	waitSender = sync.WaitGroup{}
-	client, err := oss.New(endpoint, accessKeyId, accessKeySecret)
+	var client *oss.Client
+	var err error
+	if securityToken == "" {
+		client, err = oss.New(endpoint, accessKeyId, accessKeySecret)
+	} else {
+		client, err = oss.New(endpoint, accessKeyId, accessKeySecret, oss.SecurityToken(securityToken))
+	}
 	if err != nil {
 		panic(err)
 	}
@@ -167,7 +175,7 @@ func main() {
 
 	/** run streaming  */
 	go producer(queue)
-	go consumer(queue, bucket, partsCh , traffic)
+	go consumer(queue, bucket, partsCh, traffic)
 
 	/** watch kill signal */
 	ch := make(chan os.Signal)

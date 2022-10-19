@@ -1,9 +1,10 @@
 package utils
 
 import (
-	"github.com/alyu/configparser"
-	"github.com/mylukin/easy-i18n/i18n"
 	"strings"
+
+	"github.com/alyu/configparser"
+	"github.com/gioco-play/easy-i18n/i18n"
 )
 
 const MYSQLD = "mysqld"

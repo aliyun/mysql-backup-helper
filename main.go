@@ -8,7 +8,7 @@ import (
 	"os"
 	"strings"
 
-	"github.com/mylukin/easy-i18n/i18n"
+	"github.com/gioco-play/easy-i18n/i18n"
 	"golang.org/x/term"
 	"golang.org/x/text/language"
 )
