@@ -2,10 +2,11 @@ package utils
 
 import (
 	"fmt"
-	"github.com/fatih/color"
-	"github.com/mylukin/easy-i18n/i18n"
 	"strconv"
 	"strings"
+
+	"github.com/fatih/color"
+	"github.com/gioco-play/easy-i18n/i18n"
 )
 
 type Option struct {

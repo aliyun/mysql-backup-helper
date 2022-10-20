@@ -3,7 +3,8 @@ package utils
 import (
 	"database/sql"
 	"fmt"
-	"github.com/mylukin/easy-i18n/i18n"
+
+	"github.com/gioco-play/easy-i18n/i18n"
 )
 
 func CollectVariableFromMySQLServer(db *sql.DB) map[string]string {
