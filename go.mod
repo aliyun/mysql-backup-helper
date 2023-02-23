@@ -13,8 +13,8 @@ require (
 	github.com/go-sql-driver/mysql v1.5.0
 	github.com/jeandeaual/go-locale v0.0.0-20220711133428-7de61946b173
 	github.com/satori/go.uuid v1.2.1-0.20181028125025-b2ce2384e17b // indirect
-	golang.org/x/term v0.0.0-20201117132131-f5c789dd3221
-	golang.org/x/text v0.3.7
+	golang.org/x/term v0.0.0-20210927222741-03fcf44c2211
+	golang.org/x/text v0.3.8
 	golang.org/x/time v0.0.0-20210723032227-1f47c861a9ac // indirect
 	gopkg.in/yaml.v2 v2.4.0 // indirect
 )
