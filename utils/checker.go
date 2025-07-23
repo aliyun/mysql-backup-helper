@@ -2,6 +2,8 @@ package utils
 
 import (
 	"fmt"
+	"os/exec"
+	"regexp"
 	"strconv"
 	"strings"
 
@@ -20,35 +22,25 @@ type Version struct {
 	micro int
 }
 
-var flag = true
-
-func Check(options map[string]string) {
-	checkVersion(options["version"])
+func Check(options map[string]string, cfg *Config) {
+	checkVersion(options["version"], cfg)
 	checkBackup(options)
 	checkReplication(options)
-	if flag {
-		cmd := "\tinnobackupex --backup --host=<host> --port=<port> --user=<dbuser> --password=<password> --stream=xbstream --compress /home/mysql/backup  > /home/mysql/backup/backup_qp.xb"
-		fmt.Println()
-		i18n.Printf("备份命令参考(Percona XtraBackup):")
-		fmt.Println()
-		fmt.Println(cmd)
-	}
 }
 
-func checkVersion(value string) {
-	i18n.Printf("检查MySQL版本...")
-	fmt.Println()
+func checkVersion(value string, cfg *Config) {
+	i18n.Printf("Checking MySQL Server Version...\n")
 	v := getVersion(value)
-	checkItem := i18n.Sprintf("版本")
-	if v.major == 5 && v.minor == 7 && v.micro <= 32 {
+	cfg.MysqlVersion = v
+	checkItem := i18n.Sprintf("Version")
+	if v.major == 5 && v.minor == 7 {
 		output(checkItem, value, "", true)
-	} else if v.major == 8 && v.minor == 0 && v.micro <= 18 {
+	} else if v.major == 8 && v.minor == 0 && v.micro <= 36 {
 		output(checkItem, value, "", true)
 	} else {
-		output(checkItem, value, i18n.Sprintf("可能无法兼容"), false)
-		fmt.Printf(color.HiWhiteString(i18n.Sprintf("\t您需要通过物理备份迁移到云上的数据库小版本较高，云上MySQL可能无法兼容该版本的数据文件，可在MySQL全量备份上云帮助文档页面确认")))
+		output(checkItem, value, i18n.Sprintf("maybe incompatible"), false)
+		i18n.Printf("\tYour MySQL Server version may newer than version that provided On Alibaba Cloud, data file probably incompatible, read doc online for more info.\n")
 	}
-	fmt.Println()
 }
 
 func checkInnodbFilePath(options map[string]string) {
@@ -58,30 +50,25 @@ func checkInnodbFilePath(options map[string]string) {
 	tokens := strings.Split(val, ";")
 	checkValue := key + "=" + val
 	if len(tokens) > 1 {
-		output(i18n.Sprintf("参数"), checkValue, i18n.Sprintf("不支持多参数"), false)
-		flag = false
+		output(i18n.Sprintf("Parameter"), checkValue, i18n.Sprintf("Multiple parameters are not supported"), false)
 	} else {
 		filename := strings.Split(tokens[0], ":")[0]
 		if filename == "ibdata1" {
-			output(i18n.Sprintf("参数"), checkValue, "", true)
+			output(i18n.Sprintf("Parameter"), checkValue, "", true)
 		} else {
-			output(i18n.Sprintf("参数"), checkValue, i18n.Sprintf("建议参数: ibdata1"), false)
-			flag = false
+			output(i18n.Sprintf("Parameter"), checkValue, i18n.Sprintf("Recommended parameter: ibdata1"), false)
 		}
 	}
 }
 
 func checkBackup(options map[string]string) {
-	i18n.Printf("检查备份相关参数...")
-	fmt.Println()
+	i18n.Printf("Checking backup related parameters...\n")
 	checkInnodbFilePath(options)
-	i18n.Printf("备份相关参数完毕...")
-	fmt.Println()
+	i18n.Printf("Backup related parameters checked...\n")
 }
 
 func checkReplication(options map[string]string) {
-	i18n.Printf("检查复制参数中(以下参数影响主备复制, 并不影响备份)...")
-	fmt.Println()
+	i18n.Printf("Checking replication parameters (these parameters affect master-slave replication, but do not affect backup) ...\n")
 
 	miss := []string{"server_id", "log_bin"}
 	for _, m := range miss {
@@ -96,25 +83,25 @@ func checkReplication(options map[string]string) {
 		if userVal, ok := options[item.name]; ok {
 			checkValue := fmt.Sprintf("%s=%s", item.name, userVal)
 			if userVal != item.value {
-				suggest := i18n.Sprintf("建议参数: %s", item.value)
+				suggest := i18n.Sprintf("Recommended parameter: %s", item.value)
 				fmt.Println()
-				output(i18n.Sprintf("参数"), checkValue, suggest, false)
+				output(i18n.Sprintf("Parameter"), checkValue, suggest, false)
 			} else {
-				output(i18n.Sprintf("参数"), checkValue, "", true)
+				output(i18n.Sprintf("Parameter"), checkValue, "", true)
 			}
 		}
 	}
 
-	i18n.Printf("复制参数检查完毕")
+	i18n.Printf("Replication parameter check completed")
 	fmt.Println()
 }
 
 func checkMissVariable(key, value string) {
 	checkValue := key + "=" + value
 	if value == "0" {
-		output(i18n.Sprintf("参数"), checkValue, i18n.Sprintf("参数未设置"), false)
+		output(i18n.Sprintf("Parameter"), checkValue, i18n.Sprintf("Parameter not set"), false)
 	} else {
-		output(i18n.Sprintf("参数"), checkValue, "", true)
+		output(i18n.Sprintf("Parameter"), checkValue, "", true)
 	}
 }
 
@@ -128,4 +115,85 @@ func getVersion(value string) Version {
 	minor, _ := strconv.Atoi(vers[1])
 	micro, _ := strconv.Atoi(vers[2])
 	return Version{major, minor, micro}
+}
+
+func CheckXtraBackupVersion(mysqlVer Version) {
+	cmd := exec.Command("xtrabackup", "--version")
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		msg := i18n.Sprintf("[Error] Cannot execute xtrabackup --version, please confirm that Percona XtraBackup is installed and in PATH")
+		i18n.Printf(color.RedString("%s\n", msg))
+		return
+	}
+	versionStr := string(out)
+
+	// Extract full version number (e.g., 8.0.34-29)
+	re := regexp.MustCompile(`([0-9]+)\.([0-9]+)\.([0-9]+)(?:-([0-9]+))?`)
+	match := re.FindStringSubmatch(versionStr)
+	var xtrabackupVerParts [4]int
+	if len(match) >= 4 {
+		xtrabackupVerParts[0], _ = strconv.Atoi(match[1])
+		xtrabackupVerParts[1], _ = strconv.Atoi(match[2])
+		xtrabackupVerParts[2], _ = strconv.Atoi(match[3])
+		if len(match) >= 5 && match[4] != "" {
+			xtrabackupVerParts[3], _ = strconv.Atoi(match[4])
+		}
+	}
+
+	// Verification
+	if mysqlVer.major == 5 && mysqlVer.minor == 7 {
+		if xtrabackupVerParts[0] == 2 && xtrabackupVerParts[1] == 4 {
+			msg := i18n.Sprintf("[OK] MySQL 5.7 detected xtrabackup 2.4 version, compatible")
+			i18n.Printf(color.GreenString("%s\n", msg))
+		} else {
+			msg := i18n.Sprintf("[Warning] MySQL 5.7 recommends xtrabackup 2.4, but detected version: %d.%d", xtrabackupVerParts[0], xtrabackupVerParts[1])
+			i18n.Printf(color.RedString("%s\n", msg))
+		}
+	} else if mysqlVer.major == 8 && mysqlVer.minor == 0 {
+		if xtrabackupVerParts[0] == 8 && xtrabackupVerParts[1] == 0 {
+			msg := i18n.Sprintf("[OK] MySQL 8.0 detected xtrabackup 8.0 version, compatible")
+			i18n.Printf(color.GreenString("%s\n", msg))
+			if XtrabackupVersionGreaterOrEqual(xtrabackupVerParts, [4]int{8, 0, 34, 29}) {
+				hint := i18n.Sprintf("[Hint] Detected xtrabackup 8.0.34-29 or later, default zstd compression may cause recovery to fail.")
+				i18n.Printf(color.YellowString("%s\n", hint))
+			}
+		} else {
+			msg := i18n.Sprintf("[Warning] MySQL 8.0 recommends xtrabackup 8.0, but detected version: %d.%d", xtrabackupVerParts[0], xtrabackupVerParts[1])
+			i18n.Printf(color.RedString("%s\n", msg))
+		}
+	}
+}
+
+// GetXtrabackupVersion Extract xtrabackup major.minor.patch-revision four-part version number
+func GetXtrabackupVersion() [4]int {
+	cmd := exec.Command("xtrabackup", "--version")
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return [4]int{0, 0, 0, 0}
+	}
+	versionStr := string(out)
+	re := regexp.MustCompile(`([0-9]+)\.([0-9]+)\.([0-9]+)(?:-([0-9]+))?`)
+	match := re.FindStringSubmatch(versionStr)
+	var xtrabackupVerParts [4]int
+	if len(match) >= 4 {
+		xtrabackupVerParts[0], _ = strconv.Atoi(match[1])
+		xtrabackupVerParts[1], _ = strconv.Atoi(match[2])
+		xtrabackupVerParts[2], _ = strconv.Atoi(match[3])
+		if len(match) >= 5 && match[4] != "" {
+			xtrabackupVerParts[3], _ = strconv.Atoi(match[4])
+		}
+	}
+	return xtrabackupVerParts
+}
+
+// XtrabackupVersionGreaterOrEqual Compare major.minor.patch-revision four-part version number
+func XtrabackupVersionGreaterOrEqual(v, target [4]int) bool {
+	for i := 0; i < 4; i++ {
+		if v[i] > target[i] {
+			return true
+		} else if v[i] < target[i] {
+			return false
+		}
+	}
+	return true // Equal
 }

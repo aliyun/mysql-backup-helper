@@ -1,55 +1,144 @@
-MySQL Backup Helper
------------
+# MySQL Backup Helper
 
-# 使用方法
+高效的 MySQL 物理备份与 OSS 上传工具，支持 Percona XtraBackup、阿里云 OSS、流式推送、自动压缩、自动多语言。
 
-## 前置检查
+---
+
+## 依赖要求
+
+### Go 版本要求
+- **Go 1.21 及以上**（推荐使用最新版 Go 工具链）
+- 如 go.mod 中存在 `toolchain` 字段，低于该版本的 Go 工具链将无法 build，请删除 `toolchain` 行或升级 Go 版本。
+
+### 必需依赖
+- **Percona XtraBackup**：用于 MySQL 物理备份
+  - [下载地址](https://www.percona.com/downloads/Percona-XtraBackup-LATEST/)
+  - 安装后确保 `xtrabackup` 命令在 PATH 中
+
+### 可选依赖
+- **zstd**：用于 zstd 压缩（当使用 `--compress-type=zstd` 时）
+  - [下载地址](https://github.com/facebook/zstd)
+  - 安装后确保 `zstd` 命令在 PATH 中
+
+---
+
+## 配置文件（config.json）示例
+
+```json
+{
+  "endpoint": "http://oss-cn-hangzhou.aliyuncs.com",
+  "accessKeyId": "your-access-key-id",
+  "accessKeySecret": "your-access-key-secret",
+  "securityToken": "",
+  "bucketName": "your-bucket-name",
+  "objectName": "backup/your-backup",   // 只需前缀，实际文件名会自动加时间戳和后缀
+  "size": 104857600,
+  "buffer": 10,
+  "traffic": 83886080,
+  "mysqlHost": "127.0.0.1",
+  "mysqlPort": 3306,
+  "mysqlUser": "root",
+  "mysqlPassword": "your-mysql-password",
+  "compress": true,
+  "mode": "oss",
+  "streamPort": 9999
+}
+```
+
+- **objectName**：只需指定前缀，最终 OSS 文件名会自动变为 `objectName_YYYYMMDDHHMM后缀`，如 `backup/your-backup_202507181648.xb.zst`
+- 其它参数可通过命令行覆盖
+
+---
+
+## 命令行参数
+
+| 参数                | 说明                                                         |
+|---------------------|--------------------------------------------------------------|
+| --config            | 配置文件路径（如 `config.json`）                             |
+| --host              | MySQL 主机（优先于配置文件）                                 |
+| --port              | MySQL 端口（优先于配置文件）                                 |
+| --user              | MySQL 用户名（优先于配置文件）                               |
+| --password          | MySQL 密码（优先于配置文件，未指定则交互输入）               |
+| --backup            | 启动备份流程（否则只做参数检查）                             |
+| --mode              | 备份模式：`oss`（上传到 OSS）或 `stream`（推送到 TCP 端口）  |
+| --stream-port       | 流式推送时监听的本地端口（如 9999）                          |
+| --compress-type     | 压缩类型：`qp`（qpress）、`zstd`、`none`，优先于配置文件     |
+| --lang              | 语言：`zh`（中文）或 `en`（英文），不指定则自动检测系统语言   |
+| --ai-diagnose=on/off| 备份失败时 AI 诊断，on 为自动诊断（需配置 Qwen API Key），off 为跳过，未指定时交互式询问 |
+
+---
+
+## 典型用法
+
+### 1. 编译
 
 ```sh
-# 编译
 go build -a -o backup-helper main.go
-
-# 使用方法
-./backup-helper -host [实例地址] -user [用户]  -port [端口] --password [密码]
-
-# 帮助文档
-./backup-helper -h
-Usage of ./backup-helper:
-  -host string
-    	Connect to host (default "127.0.0.1")
-  -password string
-    	Password to use when connecting to server. If password is not given it's asked from the tty.
-  -port int
-    	Port number to use for connection (default 3306)
-  -user string
-    	User for login (default "root")
 ```
 
-## 流式备份
+### 2. 一键备份并上传 OSS（自动中文/英文）
 
 ```sh
-cd oss_stream
-
-# 编译
-go build  -a -o oss_stream oss_stream.go
-
-# 使用方法
-innobackupex --backup --host=<host> --port=<port> --user=<dbuser> --password=<password> --stream=xbstream --compress /home/mysql/backup | oss_stream   
-
-# 帮助文档
-Usage of ./oss_stream:
-  -accessKeyId string
-        accessKeyId
-  -accessKeySecret string
-        accessKeySecret
-  -bucketName string
-        bucketName
-  -buffer int
-        buffer * size = used memory (default 10)
-  -endpoint string
-        oss endpoint (default "http://oss-cn-hangzhou.aliyuncs.com")
-  -objectName string
-        objectName
-  -size int
-        upload:block size default 100M (default 104857600)
+./backup-helper --config config.json --backup --mode=oss
 ```
+
+### 3. 指定英文界面
+
+```sh
+./backup-helper --config config.json --backup --mode=oss --lang=en
+```
+
+### 4. 指定压缩类型
+
+```sh
+./backup-helper --config config.json --backup --mode=oss --compress-type=zstd
+./backup-helper --config config.json --backup --mode=oss --compress-type=qp
+./backup-helper --config config.json --backup --mode=oss --compress-type=none
+```
+
+### 5. 流式推送（stream 模式）
+
+```sh
+./backup-helper --config config.json --backup --mode=stream --stream-port=9999
+# 另一个终端拉流
+nc 127.0.0.1 9999 > streamed-backup.xb
+```
+
+### 6. 仅做参数检查（不备份）
+
+```sh
+./backup-helper --config config.json
+```
+
+### 7. 纯命令行参数（无 config.json）
+
+```sh
+./backup-helper --host=127.0.0.1 --user=root --password=123456 --port=3306 --backup --mode=oss --compress-type=qp
+```
+
+---
+
+## 日志与对象命名
+
+- 所有备份日志自动保存在 `logs/` 目录，仅保留最近 10 个日志文件。
+- OSS 对象名自动加时间戳，如 `backup/your-backup_202507181648.xb.zst`，便于归档和查找。
+
+---
+
+## 多语言支持
+
+- 自动检测系统语言（支持中文/英文），也可通过 `--lang=zh` 或 `--lang=en` 强制切换。
+- 所有终端输出均支持中英文切换。
+
+---
+
+## 常见问题
+
+- **zstd 未安装**：请先安装 zstd 并确保在 PATH 中。
+- **OSS 上传失败**：请检查配置文件中的 OSS 相关参数。
+- **MySQL 连接失败**：请检查数据库主机、端口、用户名、密码。
+- **日志堆积**：程序会自动清理 logs 目录，仅保留最近 10 个日志。
+
+---
+
+如需更多高级用法或遇到问题，请查阅源码或提交 issue。

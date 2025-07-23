@@ -1,0 +1,15 @@
+{
+  "MysqlHost": "127.0.0.1",
+  "MysqlPort": 3306,
+  "MysqlUser": "root",
+  "MysqlPassword": "password",
+  "OssEndpoint": "oss-cn-hangzhou.aliyuncs.com",
+  "OssAccessKeyId": "your-access-key-id",
+  "OssAccessKeySecret": "your-access-key-secret",
+  "OssBucket": "your-bucket-name",
+  "ObjectName": "backup/mysql_backup",
+  "Compress": true,
+  "CompressType": "zstd",
+  "StreamPort": 9999,
+  "QwenAPIKey": "your-qwen-api-key"
+}

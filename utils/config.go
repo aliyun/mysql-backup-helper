@@ -1,0 +1,56 @@
+package utils
+
+import (
+	"encoding/json"
+	"os"
+)
+
+type Config struct {
+	Endpoint        string  `json:"endpoint"`
+	AccessKeyId     string  `json:"accessKeyId"`
+	AccessKeySecret string  `json:"accessKeySecret"`
+	SecurityToken   string  `json:"securityToken"`
+	BucketName      string  `json:"bucketName"`
+	ObjectName      string  `json:"objectName"`
+	Size            int     `json:"size"`
+	Buffer          int     `json:"buffer"`
+	Traffic         int64   `json:"traffic"`
+	MysqlHost       string  `json:"mysqlHost"`
+	MysqlPort       int     `json:"mysqlPort"`
+	MysqlUser       string  `json:"mysqlUser"`
+	MysqlPassword   string  `json:"mysqlPassword"`
+	Compress        bool    `json:"compress"`
+	CompressType    string  `json:"compressType"`
+	Mode            string  `json:"mode"`
+	StreamPort      int     `json:"streamPort"`
+	MysqlVersion    Version `json:"mysqlVersion"`
+	QwenAPIKey      string  `json:"qwenAPIKey"`
+}
+
+func LoadConfig(path string) (*Config, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+	var cfg Config
+	err = json.Unmarshal(data, &cfg)
+	return &cfg, err
+}
+
+func (c *Config) SetDefaults() {
+	if c.Size == 0 {
+		c.Size = 1024 * 1024 * 100 // 100MB
+	}
+	if c.Buffer == 0 {
+		c.Buffer = 10
+	}
+	if c.Traffic == 0 {
+		c.Traffic = 83886080 // 10MB
+	}
+	if c.StreamPort == 0 {
+		c.StreamPort = 9999
+	}
+	if c.MysqlPort == 0 {
+		c.MysqlPort = 3306
+	}
+}

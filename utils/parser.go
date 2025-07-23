@@ -16,7 +16,7 @@ func check(e error) {
 }
 
 func Parser(filename string) map[string]string {
-	i18n.Printf("解析文件:", filename)
+	i18n.Printf("Parsing file: %s\n", filename)
 	configparser.Delimiter = "="
 	config, err := configparser.Read(filename)
 	check(err)
