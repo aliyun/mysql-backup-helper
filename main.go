@@ -177,12 +177,7 @@ func main() {
 		// Check backup log
 		logContent, err := os.ReadFile(logFileName)
 		if err != nil {
-			if mode == "oss" {
-				utils.DeleteOSSObject(cfg, fullObjectName)
-				i18n.Printf("Backup log read error, OSS file deleted.\n")
-			} else {
-				i18n.Printf("Backup log read error.\n")
-			}
+			i18n.Printf("Backup log read error.\n")
 			os.Exit(1)
 		}
 		if !strings.Contains(string(logContent), "completed OK!") {
