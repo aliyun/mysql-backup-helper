@@ -29,7 +29,7 @@ echo "========== 测试场景2：英文，OSS，zstd压缩 =========="
 LANG=en_US.UTF-8 ./backup-helper --config config.json --backup --mode=oss --compress-type=zstd
 
 echo "========== 测试场景3：中文，OSS，无压缩 =========="
-LANG=zh_CN.UTF-8 ./backup-helper --config config.json --backup --mode=oss --compress-type=none
+LANG=zh_CN.UTF-8 ./backup-helper --config config.json --backup --mode=oss --compress=false
 
 echo "========== 测试场景4：英文，stream模式，qpress压缩 =========="
 LANG=en_US.UTF-8 ./backup-helper --config config.json --backup --mode=stream --compress-type=qp --stream-port=9999 &

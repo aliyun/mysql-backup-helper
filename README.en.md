@@ -62,7 +62,8 @@ A high-efficiency MySQL physical backup and OSS upload tool. Supports Percona Xt
 | --backup           | Run backup (otherwise only checks parameters)                    |
 | --mode             | Backup mode: `oss` (upload to OSS) or `stream` (push to TCP)     |
 | --stream-port      | Local port for streaming mode (e.g. 9999)                        |
-| --compress-type    | Compression: `qp` (qpress), `zstd`, `none` (overrides config)    |
+| --compress         | Enable compression                                               |
+| --compress-type    | Compression type: `qp` (qpress), `zstd`                          |
 | --lang             | Language: `zh` (Chinese) or `en` (English), auto-detect if unset |
 | --ai-diagnose=on/off| AI diagnosis on backup failure. 'on' runs automatically (requires Qwen API Key in config), 'off' skips, unset will prompt interactively. |
 
@@ -93,7 +94,6 @@ go build -a -o backup-helper main.go
 ```sh
 ./backup-helper --config config.json --backup --mode=oss --compress-type=zstd
 ./backup-helper --config config.json --backup --mode=oss --compress-type=qp
-./backup-helper --config config.json --backup --mode=oss --compress-type=none
 ```
 
 ### 5. Streaming mode

@@ -62,7 +62,8 @@
 | --backup            | 启动备份流程（否则只做参数检查）                             |
 | --mode              | 备份模式：`oss`（上传到 OSS）或 `stream`（推送到 TCP 端口）  |
 | --stream-port       | 流式推送时监听的本地端口（如 9999）                          |
-| --compress-type     | 压缩类型：`qp`（qpress）、`zstd`、`none`，优先于配置文件     |
+| --compress          | 启用压缩                                                  |
+| --compress-type     | 压缩类型：`qp`（qpress）、`zstd`          |
 | --lang              | 语言：`zh`（中文）或 `en`（英文），不指定则自动检测系统语言   |
 | --ai-diagnose=on/off| 备份失败时 AI 诊断，on 为自动诊断（需配置 Qwen API Key），off 为跳过，未指定时交互式询问 |
 
