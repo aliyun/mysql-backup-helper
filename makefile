@@ -1,6 +1,6 @@
 APP_NAME=backup-helper
 
-.PHONY: all build install uninstall clean
+.PHONY: all build install uninstall clean test
 
 all: build
 
@@ -18,3 +18,6 @@ uninstall:
 
 clean:
 	rm -f $(APP_NAME)
+
+test:
+	bash ./test.sh

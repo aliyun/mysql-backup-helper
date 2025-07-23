@@ -142,3 +142,16 @@ nc 127.0.0.1 9999 > streamed-backup.xb
 ---
 
 如需更多高级用法或遇到问题，请查阅源码或提交 issue。
+
+## Makefile 使用说明
+
+- `make build`：编译 backup-helper 可执行文件。
+- `make clean`：清理编译产物。
+- `make test`：自动运行 test.sh，覆盖多语言、压缩、流式、AI诊断等集成测试。
+
+### 测试账号准备
+
+- 请在 MySQL 中准备两个账号：
+  - 一个拥有足够备份权限的账号（如 `root` 或具备 `RELOAD`, `LOCK TABLES`, `PROCESS`, `REPLICATION CLIENT` 等权限）。
+  - 一个权限不足的账号（如只具备 `SELECT` 权限），用于触发备份失败和 AI 诊断测试。
+- 在 `config.json` 中分别配置这两个账号进行不同场景测试。

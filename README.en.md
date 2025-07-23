@@ -142,3 +142,16 @@ nc 127.0.0.1 9999 > streamed-backup.xb
 ---
 
 For advanced usage or issues, please check the source code or submit an issue.
+
+## Makefile Usage
+
+- `make build`: Build the backup-helper executable.
+- `make clean`: Clean build artifacts.
+- `make test`: Run test.sh for automated integration tests, covering multi-language, compression, streaming, and AI diagnosis scenarios.
+
+### Test Account Preparation
+
+- Please prepare two MySQL accounts:
+  - One with sufficient privileges for backup (e.g., `root` or an account with `RELOAD`, `LOCK TABLES`, `PROCESS`, `REPLICATION CLIENT` privileges).
+  - One with limited privileges (e.g., only `SELECT`), to trigger backup failures and test AI diagnosis.
+- Configure these accounts in `config.json` for different test scenarios.
