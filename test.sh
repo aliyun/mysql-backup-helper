@@ -32,12 +32,12 @@ echo "========== 测试场景3：中文，OSS，无压缩 =========="
 LANG=zh_CN.UTF-8 ./backup-helper --config config.json --backup --mode=oss --compress=false
 
 echo "========== 测试场景4：英文，stream模式，qpress压缩 =========="
-LANG=en_US.UTF-8 ./backup-helper --config config.json --backup --mode=stream --compress-type=qp --stream-port=9999 &
+LANG=en_US.UTF-8 ./backup-helper --config config.json --backup --mode=stream --stream-port=9999 &
 
 sleep 2
 echo "========== 测试场景4：本地拉流 =========="
 # 这里假设你有 nc 或 socat 客户端拉流
-nc localhost 9999 > /tmp/streamed-backup.xb
+(echo "FROM RDS: START";) | nc localhost 9999 > /tmp/streamed-backup.xb
 
 # 等待 stream 结束
 wait
