@@ -119,7 +119,11 @@ func main() {
 		ossObjectName := cfg.ObjectName
 		objectSuffix := ".xb"
 		// compressType default is empty
-		if cfg.Compress {
+		if mode == "stream" {
+			cfg.Compress = false
+			cfg.CompressType = ""
+			objectSuffix = ".xb"
+		} else if cfg.Compress {
 			switch compressType {
 			case "zstd":
 				objectSuffix = ".xb.zst"
