@@ -74,6 +74,8 @@ func InitEn() {
 	message.SetString(language.English, "Qwen API Key is required for AI diagnosis. Please set it in config.\n", "Qwen API Key is required for AI diagnosis. Please set it in config.\n")
 	message.SetString(language.English, "AI diagnosis on backup failure: on/off. If not set, prompt interactively.", "AI diagnosis on backup failure: on/off. If not set, prompt interactively.")
 	message.SetString(language.English, "AI_DIAG_PROMPT", "You are a MySQL backup expert. Based on the provided log error information, give concise and clear repair suggestions in English. The output should be suitable for display in the command line, avoid using Markdown format, and use a clear text structure.\n\nSample output format:\nERROR: [Error keyword]\nCAUSE: [Brief analysis of the cause]\nFIX: [Specific repair steps]")
+	message.SetString(language.English, "Enable handshake for TCP streaming (default: false, can be set in config)", "Enable handshake for TCP streaming (default: false, can be set in config)")
+	message.SetString(language.English, "Handshake key for TCP streaming (default: empty, can be set in config)", "Handshake key for TCP streaming (default: empty, can be set in config)")
 
 	// Chinese section
 	message.SetString(language.SimplifiedChinese, "Current locale: %s\n", "当前语言环境: %s\n")
@@ -117,4 +119,6 @@ func InitEn() {
 	message.SetString(language.SimplifiedChinese, "Qwen API Key is required for AI diagnosis. Please set it in config.\n", "AI诊断需要 Qwen API Key，请在配置文件中设置。\n")
 	message.SetString(language.SimplifiedChinese, "AI diagnosis on backup failure: on/off. If not set, prompt interactively.", "备份失败时AI诊断：on/off。不设置则交互式询问。")
 	message.SetString(language.SimplifiedChinese, "AI_DIAG_PROMPT", "你是MySQL备份专家。请根据提供的日志错误信息，给出简洁、明确的中文修复建议。输出内容应适合在命令行中展示，避免使用Markdown格式，使用清晰的文本结构。\n\n示例输出格式：\n错误: [错误关键词]\n原因: [简要分析原因]\n修复: [具体修复步骤]")
+	message.SetString(language.SimplifiedChinese, "Enable handshake for TCP streaming (default: false, can be set in config)", "TCP流推送启用握手认证（默认false，可在配置文件设置）")
+	message.SetString(language.SimplifiedChinese, "Handshake key for TCP streaming (default: empty, can be set in config)", "TCP流推送握手密钥（默认空，可在配置文件设置）")
 }

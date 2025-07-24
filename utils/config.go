@@ -25,6 +25,8 @@ type Config struct {
 	StreamPort      int     `json:"streamPort"`
 	MysqlVersion    Version `json:"mysqlVersion"`
 	QwenAPIKey      string  `json:"qwenAPIKey"`
+	EnableHandshake bool    `json:"enableHandshake"`
+	StreamKey       string  `json:"streamKey"`
 }
 
 func LoadConfig(path string) (*Config, error) {

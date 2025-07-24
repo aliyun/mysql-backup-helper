@@ -41,12 +41,14 @@
   "mysqlPassword": "your-mysql-password",
   "compress": true,
   "mode": "oss",
-  "streamPort": 9999
+  "streamPort": 9999,
+  "enableHandshake": false,
+  "streamKey": "your-secret-key"
 }
 ```
 
 - **objectName**：只需指定前缀，最终 OSS 文件名会自动变为 `objectName_YYYYMMDDHHMM后缀`，如 `backup/your-backup_202507181648.xb.zst`
-- 其它参数可通过命令行覆盖
+- 其它参数可通过命令行覆盖，命令行参数优先于配置文件。
 
 ---
 
@@ -66,6 +68,8 @@
 | --compress-type     | 压缩类型：`qp`（qpress）、`zstd`          |
 | --lang              | 语言：`zh`（中文）或 `en`（英文），不指定则自动检测系统语言   |
 | --ai-diagnose=on/off| 备份失败时 AI 诊断，on 为自动诊断（需配置 Qwen API Key），off 为跳过，未指定时交互式询问 |
+| --enable-handshake   | TCP流推送启用握手认证（默认false，可在配置文件设置）         |
+| --stream-key         | TCP流推送握手密钥（默认空，可在配置文件设置）                |
 
 ---
 

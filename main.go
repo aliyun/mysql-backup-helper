@@ -27,6 +27,8 @@ func main() {
 	var compressType string
 	var langFlag string
 	var aiDiagnoseFlag string
+	var enableHandshake bool
+	var streamKey string
 
 	flag.BoolVar(&doBackup, "backup", false, "Run xtrabackup and upload to OSS")
 	flag.StringVar(&configPath, "config", "", "config file path (optional)")
@@ -39,6 +41,8 @@ func main() {
 	flag.StringVar(&compressType, "compress-type", "", "Compress type: qp(qpress)/zstd, priority is higher than config file")
 	flag.StringVar(&langFlag, "lang", "", "Language: zh (Chinese) or en (English), auto-detect if unset")
 	flag.StringVar(&aiDiagnoseFlag, "ai-diagnose", "", "AI diagnosis on backup failure: on/off. If not set, prompt interactively.")
+	flag.BoolVar(&enableHandshake, "enable-handshake", false, "Enable handshake for TCP streaming (default: false, can be set in config)")
+	flag.StringVar(&streamKey, "stream-key", "", "Handshake key for TCP streaming (default: empty, can be set in config)")
 
 	flag.Parse()
 
@@ -150,11 +154,18 @@ func main() {
 			if streamPort == 0 {
 				streamPort = cfg.StreamPort
 			}
+			// handshake优先级：命令行 > config > 默认
+			if !isFlagPassed("enable-handshake") {
+				enableHandshake = cfg.EnableHandshake
+			}
+			if streamKey == "" {
+				streamKey = cfg.StreamKey
+			}
 			if streamPort == 0 {
 				i18n.Printf("You must specify --stream-port when mode=stream\n")
 				os.Exit(1)
 			}
-			tcpWriter, closer, err := utils.StartStreamServer(streamPort)
+			tcpWriter, closer, err := utils.StartStreamServer(streamPort, enableHandshake, streamKey)
 			if err != nil {
 				i18n.Printf("Stream server error: %v\n", err)
 				os.Exit(1)
@@ -241,4 +252,15 @@ func outputHeader() {
 	fmt.Printf("%s%s\n", strings.Repeat(" ", pad2), subtitle)
 	fmt.Printf("%sVersion: %s    Time: %s\n", strings.Repeat(" ", 10), version, timeStr)
 	i18n.Printf("%s\n", bar)
+}
+
+// 判断命令行参数是否被设置
+func isFlagPassed(name string) bool {
+	found := false
+	flag.CommandLine.Visit(func(f *flag.Flag) {
+		if f.Name == name {
+			found = true
+		}
+	})
+	return found
 }

@@ -41,12 +41,14 @@ A high-efficiency MySQL physical backup and OSS upload tool. Supports Percona Xt
   "mysqlPassword": "your-mysql-password",
   "compress": true,
   "mode": "oss",
-  "streamPort": 9999
+  "streamPort": 9999,
+  "enableHandshake": false,
+  "streamKey": "your-secret-key"
 }
 ```
 
 - **objectName**: Only specify the prefix. The final OSS object will be `objectName_YYYYMMDDHHMM<suffix>`, e.g. `backup/your-backup_202507181648.xb.zst`
-- All config fields can be overridden by command-line arguments
+- All config fields can be overridden by command-line arguments. Command-line arguments take precedence over config.
 
 ---
 
@@ -66,6 +68,8 @@ A high-efficiency MySQL physical backup and OSS upload tool. Supports Percona Xt
 | --compress-type    | Compression type: `qp` (qpress), `zstd`                          |
 | --lang             | Language: `zh` (Chinese) or `en` (English), auto-detect if unset |
 | --ai-diagnose=on/off| AI diagnosis on backup failure. 'on' runs automatically (requires Qwen API Key in config), 'off' skips, unset will prompt interactively. |
+| --enable-handshake   | Enable handshake for TCP streaming (default: false, can be set in config) |
+| --stream-key         | Handshake key for TCP streaming (default: empty, can be set in config)    |
 
 ---
 

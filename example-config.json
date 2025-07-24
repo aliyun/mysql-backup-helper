@@ -11,5 +11,7 @@
   "Compress": true,
   "CompressType": "zstd",
   "StreamPort": 9999,
-  "QwenAPIKey": "your-qwen-api-key"
+  "QwenAPIKey": "your-qwen-api-key",
+  "enableHandshake": true,
+  "streamKey": "your-secret-key"
 }
