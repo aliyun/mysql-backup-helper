@@ -108,6 +108,8 @@ go build -a -o backup-helper main.go
 nc 127.0.0.1 9999 > streamed-backup.xb
 ```
 
+- **In stream mode, all compression options are ignored; the backup is always sent as a raw physical stream.**
+
 ### 6. Parameter check only (no backup)
 
 ```sh

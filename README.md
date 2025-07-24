@@ -109,6 +109,8 @@ go build -a -o backup-helper main.go
 nc 127.0.0.1 9999 > streamed-backup.xb
 ```
 
+- **stream 模式下所有压缩参数均无效，始终为原始物理备份流。**
+
 ### 6. 仅做参数检查（不备份）
 
 ```sh
