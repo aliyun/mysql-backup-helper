@@ -4,6 +4,7 @@ APP_NAME=backup-helper
 
 all: build
 
+# 构建（输出为固定的可执行文件名）
 build:
 	go build -a -o $(APP_NAME) main.go
 

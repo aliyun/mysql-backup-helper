@@ -5,6 +5,13 @@ import (
 	"strings"
 )
 
+// 编译时注入的变量
+var (
+	BuildVersion = "unknown"
+	BuildTime    = "unknown"
+	GitCommit    = "unknown"
+)
+
 // AppVersion 结构体存储应用版本信息
 type AppVersion struct {
 	Version   string
@@ -12,8 +19,13 @@ type AppVersion struct {
 	GitCommit string
 }
 
-// GetVersion 从 VERSION 文件读取版本号
+// GetVersion 获取版本号，优先使用编译时注入的版本
 func GetVersion() string {
+	if BuildVersion != "unknown" {
+		return BuildVersion
+	}
+
+	// 回退到从 VERSION 文件读取
 	data, err := os.ReadFile("VERSION")
 	if err != nil {
 		return "0.0.0"
@@ -25,8 +37,8 @@ func GetVersion() string {
 func GetVersionInfo() AppVersion {
 	return AppVersion{
 		Version:   GetVersion(),
-		BuildTime: "unknown", // 可以通过编译时注入
-		GitCommit: "unknown", // 可以通过编译时注入
+		BuildTime: BuildTime,
+		GitCommit: GitCommit,
 	}
 }
 
