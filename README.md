@@ -70,6 +70,7 @@
 | --ai-diagnose=on/off| 备份失败时 AI 诊断，on 为自动诊断（需配置 Qwen API Key），off 为跳过，未指定时交互式询问 |
 | --enable-handshake   | TCP流推送启用握手认证（默认false，可在配置文件设置）         |
 | --stream-key         | TCP流推送握手密钥（默认空，可在配置文件设置）                |
+| --existed-backup     | 已存在的xtrabackup备份文件路径，用于上传或流式传输（使用'-'表示从stdin读取） |
 
 ---
 
@@ -121,6 +122,32 @@ nc 127.0.0.1 9999 > streamed-backup.xb
 
 ```sh
 ./backup-helper --host=127.0.0.1 --user=root --password=123456 --port=3306 --backup --mode=oss --compress-type=qp
+```
+
+### 8. 上传已存在的备份文件到 OSS
+
+```sh
+./backup-helper --config config.json --existed-backup backup.xb --mode=oss
+```
+
+### 9. 通过 TCP 流式传输已存在的备份文件
+
+```sh
+./backup-helper --config config.json --existed-backup backup.xb --mode=stream --stream-port=9999
+# 另一个终端拉流
+nc 127.0.0.1 9999 > streamed-backup.xb
+```
+
+### 10. 使用 cat 命令从 stdin 读取并上传到 OSS
+
+```sh
+cat backup.xb | ./backup-helper --config config.json --existed-backup - --mode=oss
+```
+
+### 11. 使用 cat 命令从 stdin 读取并通过 TCP 传输
+
+```sh
+cat backup.xb | ./backup-helper --config config.json --existed-backup - --mode=stream --stream-port=9999
 ```
 
 ---
