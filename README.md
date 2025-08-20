@@ -43,11 +43,13 @@
   "mode": "oss",
   "streamPort": 9999,
   "enableHandshake": false,
-  "streamKey": "your-secret-key"
+  "streamKey": "your-secret-key",
+  "existedBackup": ""
 }
 ```
 
 - **objectName**：只需指定前缀，最终 OSS 文件名会自动变为 `objectName_YYYYMMDDHHMM后缀`，如 `backup/your-backup_202507181648.xb.zst`
+- **existedBackup**：已存在的备份文件路径，用于上传或流式传输（使用'-'表示从stdin读取）
 - 其它参数可通过命令行覆盖，命令行参数优先于配置文件。
 
 ---
@@ -70,6 +72,8 @@
 | --ai-diagnose=on/off| 备份失败时 AI 诊断，on 为自动诊断（需配置 Qwen API Key），off 为跳过，未指定时交互式询问 |
 | --enable-handshake   | TCP流推送启用握手认证（默认false，可在配置文件设置）         |
 | --stream-key         | TCP流推送握手密钥（默认空，可在配置文件设置）                |
+| --existed-backup     | 已存在的xtrabackup备份文件路径，用于上传或流式传输（使用'-'表示从stdin读取） |
+| --version, -v        | 显示版本信息                                                      |
 
 ---
 
@@ -123,6 +127,32 @@ nc 127.0.0.1 9999 > streamed-backup.xb
 ./backup-helper --host=127.0.0.1 --user=root --password=123456 --port=3306 --backup --mode=oss --compress-type=qp
 ```
 
+### 8. 上传已存在的备份文件到 OSS
+
+```sh
+./backup-helper --config config.json --existed-backup backup.xb --mode=oss
+```
+
+### 9. 通过 TCP 流式传输已存在的备份文件
+
+```sh
+./backup-helper --config config.json --existed-backup backup.xb --mode=stream --stream-port=9999
+# 另一个终端拉流
+nc 127.0.0.1 9999 > streamed-backup.xb
+```
+
+### 10. 使用 cat 命令从 stdin 读取并上传到 OSS
+
+```sh
+cat backup.xb | ./backup-helper --config config.json --existed-backup - --mode=oss
+```
+
+### 11. 使用 cat 命令从 stdin 读取并通过 TCP 传输
+
+```sh
+cat backup.xb | ./backup-helper --config config.json --existed-backup - --mode=stream --stream-port=9999
+```
+
 ---
 
 ## 日志与对象命名
@@ -162,3 +192,12 @@ nc 127.0.0.1 9999 > streamed-backup.xb
   - 一个拥有足够备份权限的账号（如 `root` 或具备 `RELOAD`, `LOCK TABLES`, `PROCESS`, `REPLICATION CLIENT` 等权限）。
   - 一个权限不足的账号（如只具备 `SELECT` 权限），用于触发备份失败和 AI 诊断测试。
 - 在 `config.json` 中分别配置这两个账号进行不同场景测试。
+
+## 版本管理
+
+- `make version`：显示当前版本号
+- `make get-version`：获取当前版本号（用于脚本）
+- `make set-version VER=1.0.1`：设置新版本号
+- `./version.sh show`：显示当前版本号
+- `./version.sh set 1.0.1`：设置新版本号
+- `./version.sh get`：获取当前版本号（用于脚本）
