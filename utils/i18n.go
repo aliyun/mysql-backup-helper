@@ -17,7 +17,7 @@ func InitI18nAuto() {
 
 	// Detect system locale
 	userLocales, _ := locale.GetLocales()
-	i18n.Printf("Current locale: %s\n", userLocales[0])
+	// i18n.Printf("Current locale: %s\n", userLocales[0])
 	lang := language.English
 	if len(userLocales) > 0 && strings.HasSuffix(strings.ToUpper(userLocales[0]), "CN") {
 		lang = language.SimplifiedChinese
