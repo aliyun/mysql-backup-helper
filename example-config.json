@@ -18,5 +18,6 @@
   "streamPort": 9999,
   "qwenAPIKey": "your-qwen-api-key",
   "enableHandshake": true,
-  "streamKey": "your-secret-key"
+  "streamKey": "your-secret-key",
+  "existedBackup": "your-existed-backup-file-path"
 }
