@@ -29,10 +29,10 @@ func main() {
 	var aiDiagnoseFlag string
 	var enableHandshake bool
 	var streamKey string
-	var existedBackupPath string
+	var existedBackup string
 
 	flag.BoolVar(&doBackup, "backup", false, "Run xtrabackup and upload to OSS")
-	flag.StringVar(&existedBackupPath, "existed-backup-path", "", "Path to existing xtrabackup backup file to upload (use '-' for stdin)")
+	flag.StringVar(&existedBackup, "existed-backup", "", "Path to existing xtrabackup backup file to upload (use '-' for stdin)")
 	flag.StringVar(&configPath, "config", "", "config file path (optional)")
 	flag.StringVar(&host, "host", "", "Connect to host")
 	flag.IntVar(&port, "port", 0, "Port number to use for connection")
@@ -234,77 +234,108 @@ func main() {
 		}
 		i18n.Printf("[backup-helper] Backup and upload completed!\n")
 		return
-	} else if existedBackupPath != "" {
-		// upload existed backup file to rds via tcp stream
-		i18n.Printf("[backup-helper] Streaming existing backup file...\n")
+	} else if existedBackup != "" {
+		// upload existed backup file to OSS or stream via TCP
+		i18n.Printf("[backup-helper] Processing existing backup file...\n")
 
 		// Get reader from existing backup file or stdin
 		var reader io.Reader
-		if existedBackupPath == "-" {
+		if existedBackup == "-" {
 			// Read from stdin (for cat command)
 			reader = os.Stdin
 			i18n.Printf("[backup-helper] Reading backup data from stdin...\n")
 		} else {
 			// Read from file
-			file, err := os.Open(existedBackupPath)
+			file, err := os.Open(existedBackup)
 			if err != nil {
 				i18n.Printf("Open backup file error: %v\n", err)
 				os.Exit(1)
 			}
 			defer file.Close()
 			reader = file
-			i18n.Printf("[backup-helper] Reading backup data from file: %s\n", existedBackupPath)
+			i18n.Printf("[backup-helper] Reading backup data from file: %s\n", existedBackup)
 		}
 
-		// For existed backup, we only support stream mode (similar to nc -l4 9999)
-		if mode != "stream" {
-			i18n.Printf("Warning: For existed backup, mode is automatically set to 'stream'\n")
-			mode = "stream"
+		// Determine object name suffix based on compression type
+		ossObjectName := cfg.ObjectName
+		objectSuffix := ".xb"
+		if mode == "stream" {
+			cfg.Compress = false
+			cfg.CompressType = ""
+			objectSuffix = ".xb"
+		} else if cfg.Compress {
+			switch compressType {
+			case "zstd":
+				objectSuffix = ".xb.zst"
+				cfg.CompressType = "zstd"
+			default:
+				objectSuffix = "_qp.xb"
+				cfg.CompressType = ""
+			}
+		} else {
+			objectSuffix = ".xb"
+			cfg.CompressType = ""
 		}
+		timestamp := time.Now().Format("_20060102150405")
+		fullObjectName := ossObjectName + timestamp + objectSuffix
 
-		// Set stream port
-		if streamPort == 0 {
-			streamPort = cfg.StreamPort
-		}
+		switch mode {
+		case "oss":
+			i18n.Printf("[backup-helper] Uploading existing backup to OSS...\n")
+			err := utils.UploadReaderToOSS(cfg, fullObjectName, reader)
+			if err != nil {
+				i18n.Printf("OSS upload error: %v\n", err)
+				os.Exit(1)
+			}
+			i18n.Printf("[backup-helper] OSS upload completed!\n")
+		case "stream":
+			// Set stream port
+			if streamPort == 0 {
+				streamPort = cfg.StreamPort
+			}
 
-		// handshake priority：command line > config > default
-		if !isFlagPassed("enable-handshake") {
-			enableHandshake = cfg.EnableHandshake
-		}
-		if streamKey == "" {
-			streamKey = cfg.StreamKey
-		}
+			// handshake priority：command line > config > default
+			if !isFlagPassed("enable-handshake") {
+				enableHandshake = cfg.EnableHandshake
+			}
+			if streamKey == "" {
+				streamKey = cfg.StreamKey
+			}
 
-		if streamPort == 0 {
-			i18n.Printf("You must specify --stream-port when using --existed-backup-path\n")
+			if streamPort == 0 {
+				i18n.Printf("You must specify --stream-port when mode=stream\n")
+				os.Exit(1)
+			}
+
+			i18n.Printf("[backup-helper] Starting TCP stream server on port %d...\n", streamPort)
+			// Show equivalent command
+			equivalentSource := existedBackup
+			if existedBackup == "-" {
+				equivalentSource = "stdin"
+			}
+			i18n.Printf("[backup-helper] Equivalent command: cat %s | nc -l4 %d\n",
+				equivalentSource, streamPort)
+
+			tcpWriter, closer, err := utils.StartStreamServer(streamPort, enableHandshake, streamKey)
+			if err != nil {
+				i18n.Printf("Stream server error: %v\n", err)
+				os.Exit(1)
+			}
+			defer closer()
+
+			// Stream the backup data
+			i18n.Printf("[backup-helper] Streaming backup data...\n")
+			_, err = io.Copy(tcpWriter, reader)
+			if err != nil {
+				i18n.Printf("TCP stream error: %v\n", err)
+				os.Exit(1)
+			}
+
+			i18n.Printf("[backup-helper] Stream completed!\n")
+		default:
+			i18n.Printf("Unknown mode: %s\n", mode)
 			os.Exit(1)
 		}
-
-		i18n.Printf("[backup-helper] Starting TCP stream server on port %d...\n", streamPort)
-		// Show equivalent command
-		equivalentSource := existedBackupPath
-		if existedBackupPath == "-" {
-			equivalentSource = "stdin"
-		}
-		i18n.Printf("[backup-helper] Equivalent command: cat %s | nc -l4 %d\n",
-			equivalentSource, streamPort)
-
-		tcpWriter, closer, err := utils.StartStreamServer(streamPort, enableHandshake, streamKey)
-		if err != nil {
-			i18n.Printf("Stream server error: %v\n", err)
-			os.Exit(1)
-		}
-		defer closer()
-
-		// Stream the backup data
-		i18n.Printf("[backup-helper] Streaming backup data...\n")
-		_, err = io.Copy(tcpWriter, reader)
-		if err != nil {
-			i18n.Printf("TCP stream error: %v\n", err)
-			os.Exit(1)
-		}
-
-		i18n.Printf("[backup-helper] Stream completed!\n")
 		return
 	}
 }
