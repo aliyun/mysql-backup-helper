@@ -1,18 +1,32 @@
 APP_NAME=backup-helper
 
-.PHONY: all build install uninstall clean test version
+.PHONY: all build install uninstall clean test version set-version get-version resolved-version
 
 all: build
 
-# 构建（输出为固定的可执行文件名）
-build:
-	go build -a -o $(APP_NAME) main.go
+# 解析版本优先级：Git 标签 > VERSION 文件 > 0.0.0
+GIT_TAG := $(shell git describe --tags --abbrev=0 2>/dev/null)
+ifeq ($(strip $(GIT_TAG)),)
+  FILE_VERSION := $(shell test -f VERSION && cat VERSION || echo 0.0.0)
+  RESOLVED_VERSION := $(FILE_VERSION)
+else
+  RESOLVED_VERSION := $(GIT_TAG)
+endif
 
-# 显示当前版本
+# 构建（嵌入版本，不依赖运行时文件）
+build:
+	@echo "Building $(APP_NAME) (version: $(RESOLVED_VERSION))..."
+	@go build -a -ldflags="-X 'backup-helper/utils.BuildVersion=$(RESOLVED_VERSION)'" -o $(APP_NAME) main.go
+	@echo "Build completed: $(APP_NAME)"
+
+# 显示通过 Git 标签/文件解析出的版本
+resolved-version:
+	@echo $(RESOLVED_VERSION)
+
+# 兼容的版本管理（仍可使用 VERSION 文件管理）
 version:
 	@./version.sh show
 
-# 设置新版本
 set-version:
 	@if [ -z "$(VER)" ]; then \
 		echo "Usage: make set-version VER=1.0.1"; \
@@ -20,7 +34,6 @@ set-version:
 	fi
 	@./version.sh set $(VER)
 
-# 获取当前版本号
 get-version:
 	@./version.sh get
 
