@@ -27,6 +27,7 @@ type Config struct {
 	QwenAPIKey      string  `json:"qwenAPIKey"`
 	EnableHandshake bool    `json:"enableHandshake"`
 	StreamKey       string  `json:"streamKey"`
+	ExistedBackup   string  `json:"existedBackup"`
 }
 
 func LoadConfig(path string) (*Config, error) {

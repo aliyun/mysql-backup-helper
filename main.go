@@ -89,6 +89,9 @@ func main() {
 	if compressType == "" && cfg.CompressType != "" {
 		compressType = cfg.CompressType
 	}
+	if existedBackup == "" && cfg.ExistedBackup != "" {
+		existedBackup = cfg.ExistedBackup
+	}
 
 	if password == "" {
 		i18n.Printf("Please input mysql-server password: ")
