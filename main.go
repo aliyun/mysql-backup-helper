@@ -30,9 +30,12 @@ func main() {
 	var enableHandshake bool
 	var streamKey string
 	var existedBackup string
+	var showVersion bool
 
 	flag.BoolVar(&doBackup, "backup", false, "Run xtrabackup and upload to OSS")
 	flag.StringVar(&existedBackup, "existed-backup", "", "Path to existing xtrabackup backup file to upload (use '-' for stdin)")
+	flag.BoolVar(&showVersion, "version", false, "Show version information")
+	flag.BoolVar(&showVersion, "v", false, "Show version information (shorthand)")
 	flag.StringVar(&configPath, "config", "", "config file path (optional)")
 	flag.StringVar(&host, "host", "", "Connect to host")
 	flag.IntVar(&port, "port", 0, "Port number to use for connection")
@@ -47,6 +50,12 @@ func main() {
 	flag.StringVar(&streamKey, "stream-key", "", "Handshake key for TCP streaming (default: empty, can be set in config)")
 
 	flag.Parse()
+
+	// 检查版本参数
+	if showVersion {
+		utils.PrintVersion()
+		os.Exit(0)
+	}
 
 	// Set language if --lang is specified
 	switch langFlag {

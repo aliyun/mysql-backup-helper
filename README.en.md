@@ -73,6 +73,7 @@ A high-efficiency MySQL physical backup and OSS upload tool. Supports Percona Xt
 | --enable-handshake   | Enable handshake for TCP streaming (default: false, can be set in config) |
 | --stream-key         | Handshake key for TCP streaming (default: empty, can be set in config)    |
 | --existed-backup     | Path to existing xtrabackup backup file to upload or stream (use '-' for stdin) |
+| --version, -v        | Show version information                                               |
 
 ---
 
@@ -183,6 +184,15 @@ For advanced usage or issues, please check the source code or submit an issue.
 - `make build`: Build the backup-helper executable.
 - `make clean`: Clean build artifacts.
 - `make test`: Run test.sh for automated integration tests, covering multi-language, compression, streaming, and AI diagnosis scenarios.
+
+## Version Management
+
+- `make version`: Show current version number
+- `make get-version`: Get current version number (for scripts)
+- `make set-version VER=1.0.1`: Set new version number
+- `./version.sh show`: Show current version number
+- `./version.sh set 1.0.1`: Set new version number
+- `./version.sh get`: Get current version number (for scripts)
 
 ### Test Account Preparation
 

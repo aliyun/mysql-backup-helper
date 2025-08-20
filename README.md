@@ -73,6 +73,7 @@
 | --enable-handshake   | TCP流推送启用握手认证（默认false，可在配置文件设置）         |
 | --stream-key         | TCP流推送握手密钥（默认空，可在配置文件设置）                |
 | --existed-backup     | 已存在的xtrabackup备份文件路径，用于上传或流式传输（使用'-'表示从stdin读取） |
+| --version, -v        | 显示版本信息                                                      |
 
 ---
 
@@ -191,3 +192,12 @@ cat backup.xb | ./backup-helper --config config.json --existed-backup - --mode=s
   - 一个拥有足够备份权限的账号（如 `root` 或具备 `RELOAD`, `LOCK TABLES`, `PROCESS`, `REPLICATION CLIENT` 等权限）。
   - 一个权限不足的账号（如只具备 `SELECT` 权限），用于触发备份失败和 AI 诊断测试。
 - 在 `config.json` 中分别配置这两个账号进行不同场景测试。
+
+## 版本管理
+
+- `make version`：显示当前版本号
+- `make get-version`：获取当前版本号（用于脚本）
+- `make set-version VER=1.0.1`：设置新版本号
+- `./version.sh show`：显示当前版本号
+- `./version.sh set 1.0.1`：设置新版本号
+- `./version.sh get`：获取当前版本号（用于脚本）
