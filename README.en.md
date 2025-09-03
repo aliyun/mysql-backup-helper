@@ -44,12 +44,14 @@ A high-efficiency MySQL physical backup and OSS upload tool. Supports Percona Xt
   "streamPort": 9999,
   "enableHandshake": false,
   "streamKey": "your-secret-key",
-  "existedBackup": ""
+  "existedBackup": "",
+  "logDir": "/var/log/mysql-backup-helper"
 }
 ```
 
 - **objectName**: Only specify the prefix. The final OSS object will be `objectName_YYYYMMDDHHMM<suffix>`, e.g. `backup/your-backup_202507181648.xb.zst`
 - **existedBackup**: Path to existing backup file for upload or streaming (use '-' for stdin)
+- **logDir**: Log file storage directory, defaults to `/var/log/mysql-backup-helper`, supports both relative and absolute paths
 - All config fields can be overridden by command-line arguments. Command-line arguments take precedence over config.
 
 ---

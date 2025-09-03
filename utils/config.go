@@ -28,6 +28,7 @@ type Config struct {
 	EnableHandshake bool    `json:"enableHandshake"`
 	StreamKey       string  `json:"streamKey"`
 	ExistedBackup   string  `json:"existedBackup"`
+	LogDir          string  `json:"logDir"`
 }
 
 func LoadConfig(path string) (*Config, error) {
@@ -55,5 +56,8 @@ func (c *Config) SetDefaults() {
 	}
 	if c.MysqlPort == 0 {
 		c.MysqlPort = 3306
+	}
+	if c.LogDir == "" {
+		c.LogDir = "/var/log/mysql-backup-helper"
 	}
 }

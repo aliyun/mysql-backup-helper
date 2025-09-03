@@ -102,23 +102,23 @@ func main() {
 		existedBackup = cfg.ExistedBackup
 	}
 
-	if password == "" {
-		i18n.Printf("Please input mysql-server password: ")
-		pwd, _ := term.ReadPassword(0)
-		i18n.Printf("\n")
-		password = string(pwd)
-	}
-
-	// 3. MySQL param check (always run first)
-	i18n.Printf("connect to mysql-server host=%s port=%d user=%s\n", host, port, user)
-	outputHeader()
-	db := utils.GetConnection(host, port, user, password)
-	defer db.Close()
-	options := utils.CollectVariableFromMySQLServer(db)
-	utils.Check(options, cfg)
-
 	// 4. If --backup, run backup/upload
 	if doBackup {
+		// MySQL param check (only needed for backup)
+		if password == "" {
+			i18n.Printf("Please input mysql-server password: ")
+			pwd, _ := term.ReadPassword(0)
+			i18n.Printf("\n")
+			password = string(pwd)
+		}
+
+		i18n.Printf("connect to mysql-server host=%s port=%d user=%s\n", host, port, user)
+		outputHeader()
+		db := utils.GetConnection(host, port, user, password)
+		defer db.Close()
+		options := utils.CollectVariableFromMySQLServer(db)
+		utils.Check(options, cfg)
+
 		// Check xtrabackup version (run early)
 		mysqlVer := cfg.MysqlVersion
 		utils.CheckXtraBackupVersion(mysqlVer)

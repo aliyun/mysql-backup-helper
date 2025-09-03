@@ -44,12 +44,14 @@
   "streamPort": 9999,
   "enableHandshake": false,
   "streamKey": "your-secret-key",
-  "existedBackup": ""
+  "existedBackup": "",
+  "logDir": "/var/log/mysql-backup-helper"
 }
 ```
 
 - **objectName**：只需指定前缀，最终 OSS 文件名会自动变为 `objectName_YYYYMMDDHHMM后缀`，如 `backup/your-backup_202507181648.xb.zst`
 - **existedBackup**：已存在的备份文件路径，用于上传或流式传输（使用'-'表示从stdin读取）
+- **logDir**：日志文件存储目录，默认为 `/var/log/mysql-backup-helper`，支持相对路径和绝对路径
 - 其它参数可通过命令行覆盖，命令行参数优先于配置文件。
 
 ---
