@@ -88,6 +88,22 @@ func InitEn() {
 	message.SetString(language.English, "Streaming backup data...", "Streaming backup data...")
 	message.SetString(language.English, "Stream completed!", "Stream completed!")
 
+	// Backup file validation messages (English)
+	message.SetString(language.English, "Validating backup file: %s", "Validating backup file: %s")
+	message.SetString(language.English, "Valid xbstream backup file detected", "Valid xbstream backup file detected")
+	message.SetString(language.English, "Invalid backup file", "Invalid backup file")
+	message.SetString(language.English, "Error: %s", "Error: %s")
+	message.SetString(language.English, "File does not exist: %s", "File does not exist: %s")
+	message.SetString(language.English, "Cannot open file: %v", "Cannot open file: %v")
+	message.SetString(language.English, "Invalid xbstream backup file format", "Invalid xbstream backup file format")
+	message.SetString(language.English, "Validating backup data from stdin...", "Validating backup data from stdin...")
+	message.SetString(language.English, "Valid xbstream backup data detected", "Valid xbstream backup data detected")
+	message.SetString(language.English, "Invalid backup data", "Invalid backup data")
+	message.SetString(language.English, "Validation error: %v", "Validation error: %v")
+	message.SetString(language.English, "Cannot proceed with invalid backup file.", "Cannot proceed with invalid backup file.")
+	message.SetString(language.English, "Skipping validation for stdin to avoid data consumption", "Skipping validation for stdin to avoid data consumption")
+	message.SetString(language.English, "Please ensure the stdin data is valid xbstream format", "Please ensure the stdin data is valid xbstream format")
+
 	// Chinese section
 	message.SetString(language.SimplifiedChinese, "Current locale: %s\n", "当前语言环境: %s\n")
 	// General, parameter check, OSS, interaction, error, AI diagnosis (Chinese)...
@@ -143,4 +159,20 @@ func InitEn() {
 	message.SetString(language.SimplifiedChinese, "Equivalent command: cat %s | nc -l4 %d", "等价命令: cat %s | nc -l4 %d")
 	message.SetString(language.SimplifiedChinese, "Streaming backup data...", "正在流式传输备份数据...")
 	message.SetString(language.SimplifiedChinese, "Stream completed!", "流式传输完成！")
+
+	// Backup file validation messages (Chinese)
+	message.SetString(language.SimplifiedChinese, "Validating backup file: %s", "正在校验备份文件: %s")
+	message.SetString(language.SimplifiedChinese, "Valid xbstream backup file detected", "检测到有效的xbstream备份文件")
+	message.SetString(language.SimplifiedChinese, "Invalid backup file", "无效的备份文件")
+	message.SetString(language.SimplifiedChinese, "Error: %s", "错误: %s")
+	message.SetString(language.SimplifiedChinese, "File does not exist: %s", "文件不存在: %s")
+	message.SetString(language.SimplifiedChinese, "Cannot open file: %v", "无法打开文件: %v")
+	message.SetString(language.SimplifiedChinese, "Invalid xbstream backup file format", "无效的xbstream备份文件格式")
+	message.SetString(language.SimplifiedChinese, "Validating backup data from stdin...", "正在校验从标准输入读取的备份数据...")
+	message.SetString(language.SimplifiedChinese, "Valid xbstream backup data detected", "检测到有效的xbstream备份数据")
+	message.SetString(language.SimplifiedChinese, "Invalid backup data", "无效的备份数据")
+	message.SetString(language.SimplifiedChinese, "Validation error: %v", "校验错误: %v")
+	message.SetString(language.SimplifiedChinese, "Cannot proceed with invalid backup file.", "无法处理无效的备份文件。")
+	message.SetString(language.SimplifiedChinese, "Skipping validation for stdin to avoid data consumption", "跳过stdin校验以避免数据丢失")
+	message.SetString(language.SimplifiedChinese, "Please ensure the stdin data is valid xbstream format", "请确保stdin数据是有效的xbstream格式")
 }

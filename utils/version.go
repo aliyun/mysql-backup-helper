@@ -5,27 +5,27 @@ import (
 	"strings"
 )
 
-// 编译时注入的变量
+// variables injected at compile time
 var (
 	BuildVersion = "unknown"
 	BuildTime    = "unknown"
 	GitCommit    = "unknown"
 )
 
-// AppVersion 结构体存储应用版本信息
+// AppVersion struct stores application version information
 type AppVersion struct {
 	Version   string
 	BuildTime string
 	GitCommit string
 }
 
-// GetVersion 获取版本号，优先使用编译时注入的版本
+// GetVersion gets version number, prefers compile-time injected version
 func GetVersion() string {
 	if BuildVersion != "unknown" {
 		return BuildVersion
 	}
 
-	// 回退到从 VERSION 文件读取
+	// fallback to reading from VERSION file
 	data, err := os.ReadFile("VERSION")
 	if err != nil {
 		return "0.0.0"
@@ -33,7 +33,7 @@ func GetVersion() string {
 	return strings.TrimSpace(string(data))
 }
 
-// GetVersionInfo 获取完整的版本信息
+// GetVersionInfo gets complete version information
 func GetVersionInfo() AppVersion {
 	return AppVersion{
 		Version:   GetVersion(),
@@ -42,7 +42,7 @@ func GetVersionInfo() AppVersion {
 	}
 }
 
-// PrintVersion 打印版本信息
+// PrintVersion prints version information
 func PrintVersion() {
 	version := GetVersion()
 	println("MySQL Backup Helper v" + version)

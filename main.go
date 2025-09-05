@@ -51,7 +51,7 @@ func main() {
 
 	flag.Parse()
 
-	// 检查版本参数
+	// check version parameter
 	if showVersion {
 		utils.PrintVersion()
 		os.Exit(0)
@@ -250,6 +250,34 @@ func main() {
 		// upload existed backup file to OSS or stream via TCP
 		i18n.Printf("[backup-helper] Processing existing backup file...\n")
 
+		// Validate backup file before processing
+		var backupInfo *utils.BackupFileInfo
+		var err error
+
+		if existedBackup == "-" {
+			// Validate data from stdin
+			backupInfo, err = utils.ValidateBackupFileFromStdin()
+			if err != nil {
+				i18n.Printf("Validation error: %v\n", err)
+				os.Exit(1)
+			}
+			utils.PrintBackupFileValidationFromStdin(backupInfo)
+		} else {
+			// Validate file
+			backupInfo, err = utils.ValidateBackupFile(existedBackup)
+			if err != nil {
+				i18n.Printf("Validation error: %v\n", err)
+				os.Exit(1)
+			}
+			utils.PrintBackupFileValidation(existedBackup, backupInfo)
+		}
+
+		// Exit if backup file is invalid
+		if !backupInfo.IsValid {
+			i18n.Printf("[backup-helper] Cannot proceed with invalid backup file.\n")
+			os.Exit(1)
+		}
+
 		// Get reader from existing backup file or stdin
 		var reader io.Reader
 		if existedBackup == "-" {
@@ -360,7 +388,7 @@ func outputHeader() {
 	timeStr := time.Now().Format("2006-01-02 15:04:05")
 
 	i18n.Printf("%s\n", bar)
-	// 居中显示
+	// center display
 	pad := (80 - len(title)) / 2
 	if pad < 0 {
 		pad = 0
@@ -375,7 +403,7 @@ func outputHeader() {
 	i18n.Printf("%s\n", bar)
 }
 
-// 判断命令行参数是否被设置
+// check if command line parameter is set
 func isFlagPassed(name string) bool {
 	found := false
 	flag.CommandLine.Visit(func(f *flag.Flag) {
