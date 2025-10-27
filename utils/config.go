@@ -29,6 +29,9 @@ type Config struct {
 	StreamKey       string  `json:"streamKey"`
 	ExistedBackup   string  `json:"existedBackup"`
 	LogDir          string  `json:"logDir"`
+	EstimatedSize   int64   `json:"estimatedSize"`
+	IOLimit         int64   `json:"ioLimit"`
+	AutoLimitRate   bool    `json:"autoLimitRate"`
 }
 
 func LoadConfig(path string) (*Config, error) {

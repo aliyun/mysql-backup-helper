@@ -31,8 +31,14 @@ func main() {
 	var streamKey string
 	var existedBackup string
 	var showVersion bool
+	var estimatedSize int64
+	var ioLimit int64
+	var autoLimitRate bool
 
 	flag.BoolVar(&doBackup, "backup", false, "Run xtrabackup and upload to OSS")
+	flag.Int64Var(&estimatedSize, "estimated-size", 0, "Estimated backup size in bytes (for progress tracking)")
+	flag.Int64Var(&ioLimit, "io-limit", 0, "IO bandwidth limit in bytes per second")
+	flag.BoolVar(&autoLimitRate, "auto-limit-rate", false, "Automatically detect and limit IO bandwidth")
 	flag.StringVar(&existedBackup, "existed-backup", "", "Path to existing xtrabackup backup file to upload (use '-' for stdin)")
 	flag.BoolVar(&showVersion, "version", false, "Show version information")
 	flag.BoolVar(&showVersion, "v", false, "Show version information (shorthand)")
@@ -101,6 +107,33 @@ func main() {
 	if existedBackup == "" && cfg.ExistedBackup != "" {
 		existedBackup = cfg.ExistedBackup
 	}
+	if estimatedSize == 0 && cfg.EstimatedSize > 0 {
+		estimatedSize = cfg.EstimatedSize
+	}
+	if ioLimit == 0 && cfg.IOLimit > 0 {
+		ioLimit = cfg.IOLimit
+	}
+	if !autoLimitRate {
+		autoLimitRate = cfg.AutoLimitRate
+	}
+
+	// Handle auto rate limiting
+	if autoLimitRate {
+		detectedBandwidth, err := utils.DetectIOBandwidth()
+		if err != nil {
+			i18n.Printf("Warning: Could not detect IO bandwidth: %v\n", err)
+		} else {
+			// Use 80% of detected bandwidth as the limit
+			ioLimit = int64(float64(detectedBandwidth) * 0.8)
+			i18n.Printf("[backup-helper] Detected IO bandwidth: %s/s, limiting to %s/s (80%%)\n",
+				formatBytes(detectedBandwidth), formatBytes(ioLimit))
+		}
+	}
+
+	// Update traffic config if IO limit is set
+	if ioLimit > 0 {
+		cfg.Traffic = ioLimit
+	}
 
 	// 4. If --backup, run backup/upload
 	if doBackup {
@@ -159,10 +192,31 @@ func main() {
 			os.Exit(1)
 		}
 
+		// Calculate total size for progress tracking
+		var totalSize int64
+		if estimatedSize > 0 {
+			totalSize = estimatedSize
+			i18n.Printf("[backup-helper] Using estimated size: %s\n", formatBytes(totalSize))
+		} else {
+			// Calculate datadir size
+			datadir, err := utils.GetDatadirFromMySQL(db)
+			if err != nil {
+				i18n.Printf("Warning: Could not get datadir, progress tracking will be limited: %v\n", err)
+			} else {
+				totalSize, err = utils.CalculateBackupSize(datadir)
+				if err != nil {
+					i18n.Printf("Warning: Could not calculate backup size, progress tracking will be limited: %v\n", err)
+					totalSize = 0
+				} else {
+					i18n.Printf("[backup-helper] Calculated datadir size: %s\n", formatBytes(totalSize))
+				}
+			}
+		}
+
 		switch mode {
 		case "oss":
 			i18n.Printf("[backup-helper] Uploading to OSS...\n")
-			err = utils.UploadReaderToOSS(cfg, fullObjectName, reader)
+			err = utils.UploadReaderToOSS(cfg, fullObjectName, reader, totalSize)
 			if err != nil {
 				i18n.Printf("OSS upload error: %v\n", err)
 				cmd.Process.Kill()
@@ -183,7 +237,7 @@ func main() {
 				i18n.Printf("You must specify --stream-port when mode=stream\n")
 				os.Exit(1)
 			}
-			tcpWriter, closer, err := utils.StartStreamServer(streamPort, enableHandshake, streamKey)
+			tcpWriter, _, closer, err := utils.StartStreamServer(streamPort, enableHandshake, streamKey, totalSize)
 			if err != nil {
 				i18n.Printf("Stream server error: %v\n", err)
 				os.Exit(1)
@@ -319,10 +373,29 @@ func main() {
 		timestamp := time.Now().Format("_20060102150405")
 		fullObjectName := ossObjectName + timestamp + objectSuffix
 
+		// Calculate total size for existing backup
+		var totalSize int64
+		if estimatedSize > 0 {
+			totalSize = estimatedSize
+			i18n.Printf("[backup-helper] Using estimated size: %s\n", formatBytes(totalSize))
+		} else if existedBackup != "-" {
+			// Get file size for existing backup file
+			totalSize, err = utils.GetFileSize(existedBackup)
+			if err != nil {
+				i18n.Printf("Warning: Could not get backup file size, progress tracking will be limited: %v\n", err)
+				totalSize = 0
+			} else {
+				i18n.Printf("[backup-helper] Backup file size: %s\n", formatBytes(totalSize))
+			}
+		} else {
+			// stdin - we can't get size
+			i18n.Printf("[backup-helper] Uploading from stdin, size unknown\n")
+		}
+
 		switch mode {
 		case "oss":
 			i18n.Printf("[backup-helper] Uploading existing backup to OSS...\n")
-			err := utils.UploadReaderToOSS(cfg, fullObjectName, reader)
+			err := utils.UploadReaderToOSS(cfg, fullObjectName, reader, totalSize)
 			if err != nil {
 				i18n.Printf("OSS upload error: %v\n", err)
 				os.Exit(1)
@@ -356,7 +429,7 @@ func main() {
 			i18n.Printf("[backup-helper] Equivalent command: cat %s | nc -l4 %d\n",
 				equivalentSource, streamPort)
 
-			tcpWriter, closer, err := utils.StartStreamServer(streamPort, enableHandshake, streamKey)
+			tcpWriter, _, closer, err := utils.StartStreamServer(streamPort, enableHandshake, streamKey, totalSize)
 			if err != nil {
 				i18n.Printf("Stream server error: %v\n", err)
 				os.Exit(1)
@@ -412,4 +485,18 @@ func isFlagPassed(name string) bool {
 		}
 	})
 	return found
+}
+
+// formatBytes formats bytes to human-readable format
+func formatBytes(bytes int64) string {
+	const unit = 1024
+	if bytes < unit {
+		return fmt.Sprintf("%d B", bytes)
+	}
+	div, exp := int64(unit), 0
+	for n := bytes / unit; n >= unit; n /= unit {
+		div *= unit
+		exp++
+	}
+	return fmt.Sprintf("%.1f %cB", float64(bytes)/float64(div), "KMGTPE"[exp])
 }

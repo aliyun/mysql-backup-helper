@@ -45,7 +45,10 @@
   "enableHandshake": false,
   "streamKey": "your-secret-key",
   "existedBackup": "",
-  "logDir": "/var/log/mysql-backup-helper"
+  "logDir": "/var/log/mysql-backup-helper",
+  "estimatedSize": 0,
+  "ioLimit": 0,
+  "autoLimitRate": false
 }
 ```
 
@@ -75,6 +78,9 @@
 | --enable-handshake   | TCP流推送启用握手认证（默认false，可在配置文件设置）         |
 | --stream-key         | TCP流推送握手密钥（默认空，可在配置文件设置）                |
 | --existed-backup     | 已存在的xtrabackup备份文件路径，用于上传或流式传输（使用'-'表示从stdin读取） |
+| --estimated-size     | 预估备份大小（字节），用于进度跟踪                                  |
+| --io-limit           | IO 带宽限制（字节/秒），用于限速上传                                |
+| --auto-limit-rate    | 自动检测并限制 IO 带宽（检测峰值带宽的 80%）                           |
 | --version, -v        | 显示版本信息                                                      |
 
 ---
@@ -155,12 +161,70 @@ cat backup.xb | ./backup-helper --config config.json --existed-backup - --mode=o
 cat backup.xb | ./backup-helper --config config.json --existed-backup - --mode=stream --stream-port=9999
 ```
 
+### 12. 自动检测带宽并限速上传
+
+```sh
+./backup-helper --config config.json --backup --mode=oss --auto-limit-rate
+# 程序会自动检测磁盘 IO 带宽，并限制到 80% 以保护系统性能
+```
+
+### 13. 手动指定上传限速（如限制到 100 MB/s）
+
+```sh
+./backup-helper --config config.json --backup --mode=oss --io-limit 104857600
+# 104857600 字节/秒 = 100 MB/s
+```
+
+### 14. 指定预估大小以显示准确的进度
+
+```sh
+./backup-helper --config config.json --backup --mode=oss --estimated-size 1073741824
+# 1073741824 字节 = 1 GB
+```
+
 ---
 
 ## 日志与对象命名
 
 - 所有备份日志自动保存在 `logs/` 目录，仅保留最近 10 个日志文件。
 - OSS 对象名自动加时间戳，如 `backup/your-backup_202507181648.xb.zst`，便于归档和查找。
+
+## 进度跟踪
+
+工具会在备份上传过程中实时显示进度信息：
+
+- **实时进度**：显示已上传大小、总大小、百分比、传输速度和持续时间
+- **最终统计**：显示总上传大小、持续时间、平均速度
+- **大小计算**：
+  - 如果提供了 `--estimated-size`，直接使用该值
+  - 对于实时备份，自动计算 MySQL datadir 大小
+  - 对于已有备份文件，自动读取文件大小
+  - 从 stdin 读取时，无法获取大小，只显示上传量和速度
+
+## 带宽检测与限速
+
+- **自动检测**：使用 `--auto-limit-rate` 可自动检测磁盘 IO 带宽
+  - 通过 `dd` 命令测试实际写入速度，执行 3 次取平均值
+  - 自动限速到检测到的带宽的 80%，避免影响系统性能
+  - 默认值：300 MB/s（当检测失败时）
+  
+- **手动限速**：使用 `--io-limit` 手动指定上传带宽限制（字节/秒）
+
+示例输出：
+```
+[backup-helper] Detecting IO bandwidth...
+  Test 2/3...
+  Test 3/3...
+  Tests: 3/3 successful
+  Results: 8.5 GB/s (average of 3 tests)
+[backup-helper] Detected IO bandwidth: 8.5 GB/s, limiting to 6.8 GB/s (80%)
+
+Progress: 1.1 GB / 1.5 GB (73.3%) - 135.2 MB/s - Duration: 8.5s
+[backup-helper] Upload completed!
+  Total uploaded: 1.5 GB
+  Duration: 12s
+  Average speed: 125.3 MB/s
+```
 
 ---
 

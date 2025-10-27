@@ -45,7 +45,10 @@ A high-efficiency MySQL physical backup and OSS upload tool. Supports Percona Xt
   "enableHandshake": false,
   "streamKey": "your-secret-key",
   "existedBackup": "",
-  "logDir": "/var/log/mysql-backup-helper"
+  "logDir": "/var/log/mysql-backup-helper",
+  "estimatedSize": 0,
+  "ioLimit": 0,
+  "autoLimitRate": false
 }
 ```
 
@@ -75,6 +78,9 @@ A high-efficiency MySQL physical backup and OSS upload tool. Supports Percona Xt
 | --enable-handshake   | Enable handshake for TCP streaming (default: false, can be set in config) |
 | --stream-key         | Handshake key for TCP streaming (default: empty, can be set in config)    |
 | --existed-backup     | Path to existing xtrabackup backup file to upload or stream (use '-' for stdin) |
+| --estimated-size     | Estimated backup size in bytes (for progress tracking)                  |
+| --io-limit           | IO bandwidth limit in bytes per second                                   |
+| --auto-limit-rate    | Automatically detect and limit IO bandwidth (80% of detected peak)       |
 | --version, -v        | Show version information                                               |
 
 ---
@@ -154,12 +160,70 @@ cat backup.xb | ./backup-helper --config config.json --existed-backup - --mode=o
 cat backup.xb | ./backup-helper --config config.json --existed-backup - --mode=stream --stream-port=9999
 ```
 
+### 12. Auto-detect bandwidth and rate-limit upload
+
+```sh
+./backup-helper --config config.json --backup --mode=oss --auto-limit-rate
+# Automatically detects disk IO bandwidth and limits to 80% to protect system performance
+```
+
+### 13. Manually specify upload rate limit (e.g., limit to 100 MB/s)
+
+```sh
+./backup-helper --config config.json --backup --mode=oss --io-limit 104857600
+# 104857600 bytes/sec = 100 MB/s
+```
+
+### 14. Specify estimated size for accurate progress display
+
+```sh
+./backup-helper --config config.json --backup --mode=oss --estimated-size 1073741824
+# 1073741824 bytes = 1 GB
+```
+
 ---
 
 ## Logging & Object Naming
 
 - All backup logs are saved in the `logs/` directory, only the latest 10 logs are kept.
 - OSS object names are auto-appended with a timestamp, e.g. `backup/your-backup_202507181648.xb.zst`, for easy archiving and lookup.
+
+## Progress Tracking
+
+The tool displays real-time progress information during backup upload:
+
+- **Real-time Progress**: Shows uploaded size, total size, percentage, transfer speed, and duration
+- **Final Statistics**: Shows total uploaded size, duration, and average speed
+- **Size Calculation**:
+  - If `--estimated-size` is provided, uses that value directly
+  - For live backups, automatically calculates MySQL datadir size
+  - For existing backup files, automatically reads file size
+  - When reading from stdin, size is unknown, only displays upload amount and speed
+
+## Bandwidth Detection & Rate Limiting
+
+- **Auto-Detection**: Use `--auto-limit-rate` to automatically detect disk IO bandwidth
+  - Tests actual write speed using `dd` command, runs 3 times and takes average
+  - Automatically limits to 80% of detected bandwidth to avoid impacting system performance
+  - Default: 300 MB/s (when detection fails)
+  
+- **Manual Rate Limit**: Use `--io-limit` to manually specify upload bandwidth limit (bytes/sec)
+
+Example output:
+```
+[backup-helper] Detecting IO bandwidth...
+  Test 2/3...
+  Test 3/3...
+  Tests: 3/3 successful
+  Results: 8.5 GB/s (average of 3 tests)
+[backup-helper] Detected IO bandwidth: 8.5 GB/s, limiting to 6.8 GB/s (80%)
+
+Progress: 1.1 GB / 1.5 GB (73.3%) - 135.2 MB/s - Duration: 8.5s
+[backup-helper] Upload completed!
+  Total uploaded: 1.5 GB
+  Duration: 12s
+  Average speed: 125.3 MB/s
+```
 
 ---
 

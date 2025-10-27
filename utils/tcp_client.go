@@ -10,31 +10,35 @@ import (
 )
 
 // StartStreamServer starts a TCP server on the given port, accepts connections in a loop, and only returns the connection that sends the correct handshake.
-func StartStreamServer(port int, enableHandshake bool, handshakeKey string) (io.WriteCloser, func(), error) {
+func StartStreamServer(port int, enableHandshake bool, handshakeKey string, totalSize int64) (io.WriteCloser, *ProgressTracker, func(), error) {
 	ln, err := net.Listen("tcp", fmt.Sprintf(":%d", port))
 	if err != nil {
-		return nil, nil, fmt.Errorf("failed to listen on port %d: %v", port, err)
+		return nil, nil, nil, fmt.Errorf("failed to listen on port %d: %v", port, err)
 	}
 	fmt.Printf("[backup-helper] Waiting for remote connection on port %d...\n", port)
+
+	// Create progress tracker
+	tracker := NewProgressTracker(totalSize)
 
 	if !enableHandshake {
 		conn, err := ln.Accept()
 		if err != nil {
 			ln.Close()
-			return nil, nil, fmt.Errorf("failed to accept connection on port %d: %v", port, err)
+			return nil, nil, nil, fmt.Errorf("failed to accept connection on port %d: %v", port, err)
 		}
 		fmt.Println("[backup-helper] Remote client connected, no handshake required.")
-		closer := func() { conn.Close(); ln.Close() }
+		closer := func() { tracker.Complete(); conn.Close(); ln.Close() }
+		progressWriter := NewProgressWriter(conn, tracker)
 		return struct {
 			io.Writer
 			io.Closer
-		}{Writer: conn, Closer: conn}, closer, nil
+		}{Writer: progressWriter, Closer: conn}, tracker, closer, nil
 	}
 	for {
 		conn, err := ln.Accept()
 		if err != nil {
 			ln.Close()
-			return nil, nil, fmt.Errorf("failed to accept connection on port %d: %v", port, err)
+			return nil, nil, nil, fmt.Errorf("failed to accept connection on port %d: %v", port, err)
 		}
 		fmt.Println("[backup-helper] Remote client connected, waiting for handshake...")
 
@@ -51,11 +55,12 @@ func StartStreamServer(port int, enableHandshake bool, handshakeKey string) (io.
 			if line == handshakeKey {
 				conn.SetReadDeadline(time.Time{}) // cancel timeout
 				fmt.Println("[backup-helper] Handshake OK, start streaming backup...")
-				closer := func() { conn.Close(); ln.Close() }
+				closer := func() { tracker.Complete(); conn.Close(); ln.Close() }
+				progressWriter := NewProgressWriter(conn, tracker)
 				return struct {
 					io.Writer
 					io.Closer
-				}{Writer: conn, Closer: conn}, closer, nil
+				}{Writer: progressWriter, Closer: conn}, tracker, closer, nil
 			} else {
 				conn.Write([]byte("Invalid handshake. Send the correct handshake to begin streaming.\n"))
 				goAway = true

@@ -19,5 +19,8 @@
   "qwenAPIKey": "your-qwen-api-key",
   "enableHandshake": true,
   "streamKey": "your-secret-key",
-  "existedBackup": "your-existed-backup-file-path"
+  "existedBackup": "your-existed-backup-file-path",
+  "estimatedSize": 0,
+  "ioLimit": 0,
+  "autoLimitRate": false
 }
