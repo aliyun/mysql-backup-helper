@@ -70,7 +70,7 @@
 | --password          | MySQL 密码（优先于配置文件，未指定则交互输入）               |
 | --backup            | 启动备份流程（否则只做参数检查）                             |
 | --mode              | 备份模式：`oss`（上传到 OSS）或 `stream`（推送到 TCP 端口）  |
-| --stream-port       | 流式推送时监听的本地端口（如 9999）                          |
+| --stream-port       | 流式推送时监听的本地端口（如 9999，设为 0 则自动查找空闲端口） |
 | --compress          | 启用压缩                                                  |
 | --compress-type     | 压缩类型：`qp`（qpress）、`zstd`          |
 | --lang              | 语言：`zh`（中文）或 `en`（英文），不指定则自动检测系统语言   |
@@ -121,7 +121,20 @@ go build -a -o backup-helper main.go
 nc 127.0.0.1 9999 > streamed-backup.xb
 ```
 
+### 5.1. 自动查找空闲端口（推荐）
+
+```sh
+./backup-helper --config config.json --backup --mode=stream --stream-port=0
+# 程序会自动找到空闲端口并显示本地 IP 和端口
+# 输出示例：
+# [backup-helper] Listening on 192.168.1.100:54321
+# [backup-helper] Waiting for remote connection...
+# 另一个终端拉流（使用显示的端口）
+nc 192.168.1.100 54321 > streamed-backup.xb
+```
+
 - **stream 模式下所有压缩参数均无效，始终为原始物理备份流。**
+- **自动查找端口时会自动获取本地 IP 并显示在输出中，便于远程连接。**
 
 ### 6. 仅做参数检查（不备份）
 

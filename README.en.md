@@ -70,7 +70,7 @@ A high-efficiency MySQL physical backup and OSS upload tool. Supports Percona Xt
 | --password         | MySQL password (overrides config, prompt if omitted)             |
 | --backup           | Run backup (otherwise only checks parameters)                    |
 | --mode             | Backup mode: `oss` (upload to OSS) or `stream` (push to TCP)     |
-| --stream-port      | Local port for streaming mode (e.g. 9999)                        |
+| --stream-port      | Local port for streaming mode (e.g. 9999, 0 = auto-find available port) |
 | --compress         | Enable compression                                               |
 | --compress-type    | Compression type: `qp` (qpress), `zstd`                          |
 | --lang             | Language: `zh` (Chinese) or `en` (English), auto-detect if unset |
@@ -120,7 +120,20 @@ go build -a -o backup-helper main.go
 nc 127.0.0.1 9999 > streamed-backup.xb
 ```
 
+### 5.1. Auto-find available port (recommended)
+
+```sh
+./backup-helper --config config.json --backup --mode=stream --stream-port=0
+# The program will automatically find an available port and display the local IP and port
+# Example output:
+# [backup-helper] Listening on 192.168.1.100:54321
+# [backup-helper] Waiting for remote connection...
+# In another terminal, pull the stream (using the displayed port):
+nc 192.168.1.100 54321 > streamed-backup.xb
+```
+
 - **In stream mode, all compression options are ignored; the backup is always sent as a raw physical stream.**
+- **When auto-finding ports, the program automatically obtains and displays the local IP in the output, making remote connections easy.**
 
 ### 6. Parameter check only (no backup)
 

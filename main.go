@@ -47,7 +47,7 @@ func main() {
 	flag.IntVar(&port, "port", 0, "Port number to use for connection")
 	flag.StringVar(&user, "user", "", "User for login")
 	flag.StringVar(&password, "password", "", "Password to use when connecting to server. If password is not given it's asked from the tty.")
-	flag.IntVar(&streamPort, "stream-port", 0, "If set, stream backup to this local TCP port for remote pulling")
+	flag.IntVar(&streamPort, "stream-port", 0, "Local TCP port for streaming (0 = auto-find available port)")
 	flag.StringVar(&mode, "mode", "oss", "Backup mode: oss (upload to OSS) or stream (push to TCP port)")
 	flag.StringVar(&compressType, "compress-type", "", "Compress type: qp(qpress)/zstd, priority is higher than config file")
 	flag.StringVar(&langFlag, "lang", "", "Language: zh (Chinese) or en (English), auto-detect if unset")
@@ -233,11 +233,10 @@ func main() {
 			if streamKey == "" {
 				streamKey = cfg.StreamKey
 			}
-			if streamPort == 0 {
-				i18n.Printf("You must specify --stream-port when mode=stream\n")
-				os.Exit(1)
-			}
-			tcpWriter, _, closer, err := utils.StartStreamServer(streamPort, enableHandshake, streamKey, totalSize)
+			// streamPort can be 0 now (auto-find available port)
+			tcpWriter, _, closer, actualPort, localIP, err := utils.StartStreamServer(streamPort, enableHandshake, streamKey, totalSize)
+			_ = actualPort // Port info already displayed in StartStreamServer
+			_ = localIP    // IP info already displayed in StartStreamServer
 			if err != nil {
 				i18n.Printf("Stream server error: %v\n", err)
 				os.Exit(1)
@@ -415,21 +414,23 @@ func main() {
 				streamKey = cfg.StreamKey
 			}
 
-			if streamPort == 0 {
-				i18n.Printf("You must specify --stream-port when mode=stream\n")
-				os.Exit(1)
-			}
-
-			i18n.Printf("[backup-helper] Starting TCP stream server on port %d...\n", streamPort)
-			// Show equivalent command
+			// streamPort can be 0 now (auto-find available port)
+			// Show equivalent command (before starting server, so we show original port)
 			equivalentSource := existedBackup
 			if existedBackup == "-" {
 				equivalentSource = "stdin"
 			}
-			i18n.Printf("[backup-helper] Equivalent command: cat %s | nc -l4 %d\n",
-				equivalentSource, streamPort)
+			if streamPort > 0 {
+				i18n.Printf("[backup-helper] Starting TCP stream server on port %d...\n", streamPort)
+				i18n.Printf("[backup-helper] Equivalent command: cat %s | nc -l4 %d\n",
+					equivalentSource, streamPort)
+			} else {
+				i18n.Printf("[backup-helper] Starting TCP stream server (auto-find available port)...\n")
+			}
 
-			tcpWriter, _, closer, err := utils.StartStreamServer(streamPort, enableHandshake, streamKey, totalSize)
+			tcpWriter, _, closer, actualPort, localIP, err := utils.StartStreamServer(streamPort, enableHandshake, streamKey, totalSize)
+			_ = actualPort // Port info already displayed in StartStreamServer
+			_ = localIP    // IP info already displayed in StartStreamServer
 			if err != nil {
 				i18n.Printf("Stream server error: %v\n", err)
 				os.Exit(1)

@@ -9,13 +9,67 @@ import (
 	"time"
 )
 
-// StartStreamServer starts a TCP server on the given port, accepts connections in a loop, and only returns the connection that sends the correct handshake.
-func StartStreamServer(port int, enableHandshake bool, handshakeKey string, totalSize int64) (io.WriteCloser, *ProgressTracker, func(), error) {
-	ln, err := net.Listen("tcp", fmt.Sprintf(":%d", port))
+// GetAvailablePort finds an available port by binding to port 0 and getting the assigned port
+func GetAvailablePort() (int, error) {
+	addr, err := net.ResolveTCPAddr("tcp", "localhost:0")
 	if err != nil {
-		return nil, nil, nil, fmt.Errorf("failed to listen on port %d: %v", port, err)
+		return 0, err
 	}
-	fmt.Printf("[backup-helper] Waiting for remote connection on port %d...\n", port)
+
+	l, err := net.ListenTCP("tcp", addr)
+	if err != nil {
+		return 0, err
+	}
+	defer l.Close()
+
+	return l.Addr().(*net.TCPAddr).Port, nil
+}
+
+// GetLocalIP gets the local IP address (preferring non-loopback)
+func GetLocalIP() (string, error) {
+	conn, err := net.Dial("udp", "8.8.8.8:80")
+	if err != nil {
+		return "", err
+	}
+	defer conn.Close()
+
+	localAddr := conn.LocalAddr().(*net.UDPAddr)
+	return localAddr.IP.String(), nil
+}
+
+// StartStreamServer starts a TCP server on the given port, accepts connections in a loop, and only returns the connection that sends the correct handshake.
+// If port is 0, it will automatically find an available port.
+// Returns the actual listening port and local IP for display.
+func StartStreamServer(port int, enableHandshake bool, handshakeKey string, totalSize int64) (io.WriteCloser, *ProgressTracker, func(), int, string, error) {
+	var addr string
+	var actualPort int
+
+	if port == 0 {
+		// Auto-find available port
+		var err error
+		actualPort, err = GetAvailablePort()
+		if err != nil {
+			return nil, nil, nil, 0, "", fmt.Errorf("failed to find available port: %v", err)
+		}
+		addr = fmt.Sprintf(":%d", actualPort)
+	} else {
+		actualPort = port
+		addr = fmt.Sprintf(":%d", port)
+	}
+
+	ln, err := net.Listen("tcp", addr)
+	if err != nil {
+		return nil, nil, nil, 0, "", fmt.Errorf("failed to listen on port %d: %v", actualPort, err)
+	}
+
+	// Get local IP and display connection info
+	localIP, err := GetLocalIP()
+	if err != nil {
+		localIP = "127.0.0.1" // fallback to localhost
+	}
+
+	fmt.Printf("[backup-helper] Listening on %s:%d\n", localIP, actualPort)
+	fmt.Printf("[backup-helper] Waiting for remote connection...\n")
 
 	// Create progress tracker
 	tracker := NewProgressTracker(totalSize)
@@ -24,7 +78,7 @@ func StartStreamServer(port int, enableHandshake bool, handshakeKey string, tota
 		conn, err := ln.Accept()
 		if err != nil {
 			ln.Close()
-			return nil, nil, nil, fmt.Errorf("failed to accept connection on port %d: %v", port, err)
+			return nil, nil, nil, 0, "", fmt.Errorf("failed to accept connection on port %d: %v", actualPort, err)
 		}
 		fmt.Println("[backup-helper] Remote client connected, no handshake required.")
 		closer := func() { tracker.Complete(); conn.Close(); ln.Close() }
@@ -32,13 +86,13 @@ func StartStreamServer(port int, enableHandshake bool, handshakeKey string, tota
 		return struct {
 			io.Writer
 			io.Closer
-		}{Writer: progressWriter, Closer: conn}, tracker, closer, nil
+		}{Writer: progressWriter, Closer: conn}, tracker, closer, actualPort, localIP, nil
 	}
 	for {
 		conn, err := ln.Accept()
 		if err != nil {
 			ln.Close()
-			return nil, nil, nil, fmt.Errorf("failed to accept connection on port %d: %v", port, err)
+			return nil, nil, nil, 0, "", fmt.Errorf("failed to accept connection on port %d: %v", actualPort, err)
 		}
 		fmt.Println("[backup-helper] Remote client connected, waiting for handshake...")
 
@@ -60,7 +114,7 @@ func StartStreamServer(port int, enableHandshake bool, handshakeKey string, tota
 				return struct {
 					io.Writer
 					io.Closer
-				}{Writer: progressWriter, Closer: conn}, tracker, closer, nil
+				}{Writer: progressWriter, Closer: conn}, tracker, closer, actualPort, localIP, nil
 			} else {
 				conn.Write([]byte("Invalid handshake. Send the correct handshake to begin streaming.\n"))
 				goAway = true
