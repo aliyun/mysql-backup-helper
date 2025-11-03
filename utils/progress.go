@@ -3,6 +3,7 @@ package utils
 import (
 	"fmt"
 	"io"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -17,16 +18,16 @@ type ProgressTracker struct {
 	lastUpdate    time.Time
 	lastBytes     int64
 	isComplete    bool
+	startOnce     sync.Once
 }
 
 // NewProgressTracker creates a new progress tracker
 func NewProgressTracker(totalBytes int64) *ProgressTracker {
-	now := time.Now()
 	return &ProgressTracker{
 		totalBytes:    totalBytes,
 		uploadedBytes: 0,
-		startTime:     now,
-		lastUpdate:    now,
+		startTime:     time.Time{}, // Zero time, will be set on first Update
+		lastUpdate:    time.Time{},
 		lastBytes:     0,
 		isComplete:    false,
 	}
@@ -34,6 +35,13 @@ func NewProgressTracker(totalBytes int64) *ProgressTracker {
 
 // Update updates the uploaded bytes and displays progress
 func (pt *ProgressTracker) Update(bytes int64) {
+	// Start timer on first data transfer
+	pt.startOnce.Do(func() {
+		now := time.Now()
+		pt.startTime = now
+		pt.lastUpdate = now
+	})
+
 	atomic.AddInt64(&pt.uploadedBytes, bytes)
 	pt.displayProgress()
 }
@@ -42,6 +50,16 @@ func (pt *ProgressTracker) Update(bytes int64) {
 func (pt *ProgressTracker) Complete() {
 	pt.isComplete = true
 	totalUploaded := atomic.LoadInt64(&pt.uploadedBytes)
+
+	// Only calculate duration if we actually started (startTime is not zero)
+	if pt.startTime.IsZero() {
+		// No data was transferred
+		fmt.Printf("\n")
+		i18n.Printf("[backup-helper] Upload completed!\n")
+		i18n.Printf("  Total uploaded: %s\n", formatBytes(totalUploaded))
+		return
+	}
+
 	duration := time.Since(pt.startTime)
 	avgSpeed := float64(totalUploaded) / duration.Seconds()
 
@@ -54,6 +72,11 @@ func (pt *ProgressTracker) Complete() {
 
 // displayProgress displays current progress
 func (pt *ProgressTracker) displayProgress() {
+	// Don't display if startTime hasn't been set yet
+	if pt.startTime.IsZero() {
+		return
+	}
+
 	now := time.Now()
 	uploaded := atomic.LoadInt64(&pt.uploadedBytes)
 
