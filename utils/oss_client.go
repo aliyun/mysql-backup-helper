@@ -3,8 +3,10 @@ package utils
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"io"
 	"sync"
+	"time"
 
 	"github.com/aliyun/aliyun-oss-go-sdk/oss"
 	"github.com/gioco-play/easy-i18n/i18n"
@@ -33,6 +35,27 @@ func UploadReaderToOSS(cfg *Config, objectName string, reader io.Reader, totalSi
 	// Create progress tracker
 	tracker := NewProgressTracker(totalSize)
 	defer tracker.Complete()
+
+	// Start IO monitoring if auto-limit-rate is enabled
+	var ioMonitor *IOMonitor
+	var monitorCtx context.Context
+	var cancelMonitor context.CancelFunc
+	if cfg.AutoLimitRate {
+		monitorCtx, cancelMonitor = context.WithCancel(context.Background())
+		defer cancelMonitor()
+
+		// Create IO monitor with 80% threshold and dynamic rate adjustment
+		ioMonitor = NewIOMonitor(80.0, cfg.Traffic, func(stats *IOStats) {
+			// This callback is called when high IO is detected, but rate is already adjusted
+			// Just log the stats for reference
+			i18n.Printf("  Current IO stats - Read: %.1f MB/s, Write: %.1f MB/s\n",
+				stats.ReadBW, stats.WriteBW)
+		})
+		ioMonitor.Start(monitorCtx, 2*time.Second)
+		defer ioMonitor.Stop()
+
+		i18n.Printf("[backup-helper] Real-time IO monitoring active (threshold: 80%%, auto-adjusting rate limit)\n")
+	}
 
 	client, err := oss.New(cfg.Endpoint, cfg.AccessKeyId, cfg.AccessKeySecret)
 	if err != nil {
@@ -65,7 +88,14 @@ func UploadReaderToOSS(cfg *Config, objectName string, reader io.Reader, totalSi
 		if n > 0 {
 			data := p[:n]
 			waitSender.Add(1)
-			part, err := uploadPart(bucket, imur, data, index, cfg.Traffic)
+
+			// Use dynamic rate limit if IO monitoring is active
+			trafficLimit := cfg.Traffic
+			if ioMonitor != nil {
+				trafficLimit = ioMonitor.GetCurrentLimit()
+			}
+
+			part, err := uploadPart(bucket, imur, data, index, trafficLimit)
 			if err != nil {
 				bucket.AbortMultipartUpload(imur)
 				return err

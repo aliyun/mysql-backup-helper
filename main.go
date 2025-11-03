@@ -2,6 +2,7 @@ package main
 
 import (
 	"backup-helper/utils"
+	"context"
 	"flag"
 	"fmt"
 	"io"
@@ -119,15 +120,21 @@ func main() {
 
 	// Handle auto rate limiting
 	if autoLimitRate {
+		// Set default safe limit - real-time monitoring will be active during transfer
+		if ioLimit == 0 {
+			ioLimit = 300 * 1024 * 1024 // Default 300 MB/s
+		}
 		detectedBandwidth, err := utils.DetectIOBandwidth()
 		if err != nil {
-			i18n.Printf("Warning: Could not detect IO bandwidth: %v\n", err)
+			i18n.Printf("Warning: Could not initialize IO monitoring: %v\n", err)
 		} else {
-			// Use 80% of detected bandwidth as the limit
+			// Use 80% of default bandwidth as the limit
 			ioLimit = int64(float64(detectedBandwidth) * 0.8)
-			i18n.Printf("[backup-helper] Detected IO bandwidth: %s/s, limiting to %s/s (80%%)\n",
-				formatBytes(detectedBandwidth), formatBytes(ioLimit))
+			i18n.Printf("[backup-helper] Using safe default limit: %s/s (80%% of 300 MB/s)\n",
+				formatBytes(ioLimit))
 		}
+		// Enable auto-limit-rate in config for real-time monitoring
+		cfg.AutoLimitRate = true
 	}
 
 	// Update traffic config if IO limit is set
@@ -244,7 +251,50 @@ func main() {
 				os.Exit(1)
 			}
 			defer closer()
-			_, err = io.Copy(tcpWriter, reader)
+
+			// Start IO monitoring for stream mode if enabled
+			var ioMonitor *utils.IOMonitor
+			var rateLimitedWriter *utils.RateLimitedWriter
+			if cfg.AutoLimitRate {
+				monitorCtx, cancelMonitor := context.WithCancel(context.Background())
+				defer cancelMonitor()
+
+				ioMonitor = utils.NewIOMonitor(80.0, cfg.Traffic, func(stats *utils.IOStats) {
+					i18n.Printf("  Current IO stats - Read: %.1f MB/s, Write: %.1f MB/s\n",
+						stats.ReadBW, stats.WriteBW)
+				})
+				ioMonitor.Start(monitorCtx, 2*time.Second)
+				defer ioMonitor.Stop()
+
+				// Wrap writer with rate limiter
+				rateLimitedWriter = utils.NewRateLimitedWriter(tcpWriter, cfg.Traffic)
+
+				// Start goroutine to update rate limit based on IO monitoring
+				go func() {
+					ticker := time.NewTicker(2 * time.Second)
+					defer ticker.Stop()
+					for {
+						select {
+						case <-monitorCtx.Done():
+							return
+						case <-ticker.C:
+							if ioMonitor != nil && rateLimitedWriter != nil {
+								currentLimit := ioMonitor.GetCurrentLimit()
+								rateLimitedWriter.UpdateRateLimit(currentLimit)
+							}
+						}
+					}
+				}()
+
+				i18n.Printf("[backup-helper] Real-time IO monitoring active (threshold: 80%%, auto-adjusting rate limit)\n")
+			}
+
+			writer := tcpWriter
+			if rateLimitedWriter != nil {
+				writer = rateLimitedWriter
+			}
+
+			_, err = io.Copy(writer, reader)
 			if err != nil {
 				i18n.Printf("TCP stream error: %v\n", err)
 				cmd.Process.Kill()
@@ -440,9 +490,52 @@ func main() {
 			}
 			defer closer()
 
+			// Start IO monitoring for stream mode if enabled
+			var ioMonitor *utils.IOMonitor
+			var rateLimitedWriter *utils.RateLimitedWriter
+			if cfg.AutoLimitRate {
+				monitorCtx, cancelMonitor := context.WithCancel(context.Background())
+				defer cancelMonitor()
+
+				ioMonitor = utils.NewIOMonitor(80.0, cfg.Traffic, func(stats *utils.IOStats) {
+					i18n.Printf("  Current IO stats - Read: %.1f MB/s, Write: %.1f MB/s\n",
+						stats.ReadBW, stats.WriteBW)
+				})
+				ioMonitor.Start(monitorCtx, 2*time.Second)
+				defer ioMonitor.Stop()
+
+				// Wrap writer with rate limiter
+				rateLimitedWriter = utils.NewRateLimitedWriter(tcpWriter, cfg.Traffic)
+
+				// Start goroutine to update rate limit based on IO monitoring
+				go func() {
+					ticker := time.NewTicker(2 * time.Second)
+					defer ticker.Stop()
+					for {
+						select {
+						case <-monitorCtx.Done():
+							return
+						case <-ticker.C:
+							if ioMonitor != nil && rateLimitedWriter != nil {
+								currentLimit := ioMonitor.GetCurrentLimit()
+								rateLimitedWriter.UpdateRateLimit(currentLimit)
+							}
+						}
+					}
+				}()
+
+				i18n.Printf("[backup-helper] Real-time IO monitoring active (threshold: 80%%, auto-adjusting rate limit)\n")
+			}
+
 			// Stream the backup data
 			i18n.Printf("[backup-helper] Streaming backup data...\n")
-			_, err = io.Copy(tcpWriter, reader)
+
+			writer := tcpWriter
+			if rateLimitedWriter != nil {
+				writer = rateLimitedWriter
+			}
+
+			_, err = io.Copy(writer, reader)
 			if err != nil {
 				i18n.Printf("TCP stream error: %v\n", err)
 				os.Exit(1)

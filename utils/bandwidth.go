@@ -1,181 +1,297 @@
 package utils
 
 import (
+	"context"
 	"fmt"
-	"os"
 	"os/exec"
 	"strconv"
 	"strings"
+	"sync/atomic"
+	"time"
 
 	"github.com/gioco-play/easy-i18n/i18n"
 )
 
-func parseDDOutput(output []byte) (int64, error) {
-	outputStr := string(output)
-	lines := strings.Split(outputStr, "\n")
-
-	// Try parsing format with speed unit: "10485760 bytes (10 MB) copied, 0.5 s, 20.9 MB/s"
-	// or "10485760 bytes (10 MB) copied, 0.00976458 s, 1.1 GB/s"
-	for _, line := range lines {
-		if strings.Contains(line, "copied,") {
-			// Check for speed units: GB/s, MB/s, KB/s
-			units := []string{"GB/s", "MB/s", "KB/s"}
-			for _, unit := range units {
-				if strings.Contains(line, unit) {
-					i18n.Printf("    Found speed format line with %s: %s\n", unit, line)
-					parts := strings.Fields(line)
-					unitIndex := -1
-					for i, part := range parts {
-						if part == unit {
-							unitIndex = i
-							break
-						}
-					}
-					if unitIndex > 0 {
-						valueStr := parts[unitIndex-1]
-						i18n.Printf("    Parsing %s value: %s\n", unit, valueStr)
-						if value, err := strconv.ParseFloat(valueStr, 64); err == nil && value > 0 {
-							var bandwidth int64
-							switch unit {
-							case "GB/s":
-								bandwidth = int64(value * 1024 * 1024 * 1024)
-							case "MB/s":
-								bandwidth = int64(value * 1024 * 1024)
-							case "KB/s":
-								bandwidth = int64(value * 1024)
-							}
-							i18n.Printf("    Parsed bandwidth: %.2f %s = %d bytes/s\n", value, unit, bandwidth)
-							return bandwidth, nil
-						} else if err != nil {
-							i18n.Printf("    Failed to parse %s value '%s': %v\n", unit, valueStr, err)
-						}
-					} else {
-						i18n.Printf("    Could not find %s in line: %s\n", unit, line)
-					}
-				}
-			}
-		}
-	}
-
-	// Try parsing macOS format: "10485760 bytes transferred in 0.5 secs (20971520 bytes/sec)"
-	for _, line := range lines {
-		if strings.Contains(line, "bytes/sec)") {
-			i18n.Printf("    Found macOS format line: %s\n", line)
-			startIdx := strings.Index(line, "(")
-			endIdx := strings.Index(line, "bytes/sec)")
-			if startIdx > 0 && endIdx > startIdx {
-				bytesStr := line[startIdx+1 : endIdx]
-				bytesStr = strings.ReplaceAll(bytesStr, ",", "")
-				bytesStr = strings.TrimSpace(bytesStr)
-				i18n.Printf("    Parsing bytes/sec value: %s\n", bytesStr)
-				if bytes, err := strconv.ParseInt(bytesStr, 10, 64); err == nil && bytes > 0 {
-					i18n.Printf("    Parsed bandwidth: %d bytes/s\n", bytes)
-					return bytes, nil
-				} else if err != nil {
-					i18n.Printf("    Failed to parse bytes/sec value '%s': %v\n", bytesStr, err)
-				}
-			} else {
-				i18n.Printf("    Could not find bytes/sec pattern in line: %s\n", line)
-			}
-		}
-	}
-
-	// If we get here, parsing failed - log all lines for debugging
-	i18n.Printf("    Failed to parse dd output. All output lines:\n")
-	for i, line := range lines {
-		if strings.TrimSpace(line) != "" {
-			i18n.Printf("      [%d] %s\n", i+1, line)
-		}
-	}
-
-	return 0, fmt.Errorf("failed to parse dd output: no recognized format found")
+// IOStats represents current IO statistics
+type IOStats struct {
+	UtilPercent float64 // IO utilization percentage (0-100)
+	ReadIOPS    float64 // Read IOPS
+	WriteIOPS   float64 // Write IOPS
+	ReadBW      float64 // Read bandwidth (MB/s)
+	WriteBW     float64 // Write bandwidth (MB/s)
 }
 
-func runDDTest() (int64, error) {
-	// Try Linux-style first (with direct I/O)
-	ddCmd := exec.Command("dd", "if=/dev/zero", "of=/tmp/backup-helper-iobench.tmp", "bs=1M", "count=10", "oflag=direct", "conv=fdatasync")
-	output, err := ddCmd.CombinedOutput()
+// IOMonitor monitors system IO in real-time during transfer
+type IOMonitor struct {
+	stats          *IOStats
+	isRunning      int32
+	stopChan       chan struct{}
+	threshold      float64              // Warning threshold for IO utilization (0-100)
+	onHighIO       func(stats *IOStats) // Callback when IO is high
+	currentLimit   int64                // Current dynamic rate limit (atomic)
+	originalLimit  int64                // Original rate limit set by user
+	adjustmentStep float64              // Step size for rate adjustment (as percentage)
+}
 
-	if err != nil {
-		i18n.Printf("    Linux-style dd failed: %v\n", err)
-		if len(output) > 0 {
-			i18n.Printf("    Linux dd output: %s\n", string(output))
+// NewIOMonitor creates a new IO monitor with dynamic rate limiting
+func NewIOMonitor(threshold float64, originalLimit int64, onHighIO func(stats *IOStats)) *IOMonitor {
+	return &IOMonitor{
+		stats:          &IOStats{},
+		isRunning:      0,
+		stopChan:       make(chan struct{}),
+		threshold:      threshold,
+		onHighIO:       onHighIO,
+		currentLimit:   originalLimit,
+		originalLimit:  originalLimit,
+		adjustmentStep: 0.1, // 10% adjustment step
+	}
+}
+
+// Start begins monitoring IO in the background
+func (m *IOMonitor) Start(ctx context.Context, interval time.Duration) {
+	if !atomic.CompareAndSwapInt32(&m.isRunning, 0, 1) {
+		return // Already running
+	}
+
+	go func() {
+		ticker := time.NewTicker(interval)
+		defer ticker.Stop()
+
+		for {
+			select {
+			case <-ctx.Done():
+				atomic.StoreInt32(&m.isRunning, 0)
+				return
+			case <-m.stopChan:
+				atomic.StoreInt32(&m.isRunning, 0)
+				return
+			case <-ticker.C:
+				stats, err := GetCurrentIOStats()
+				if err != nil {
+					// Silently fail, don't spam errors
+					continue
+				}
+				m.stats = stats
+
+				currentLimit := atomic.LoadInt64(&m.currentLimit)
+
+				// Dynamic rate adjustment based on IO utilization
+				if stats.UtilPercent > m.threshold {
+					// IO is high, reduce rate limit
+					newLimit := int64(float64(currentLimit) * (1.0 - m.adjustmentStep))
+					// Minimum limit: 10% of original
+					minLimit := int64(float64(m.originalLimit) * 0.1)
+					if newLimit < minLimit {
+						newLimit = minLimit
+					}
+
+					if newLimit < currentLimit {
+						atomic.StoreInt64(&m.currentLimit, newLimit)
+						if m.onHighIO != nil {
+							m.onHighIO(stats)
+						}
+						i18n.Printf("\n[backup-helper] IO utilization high (%.1f%%), reducing rate limit to %s/s\n",
+							stats.UtilPercent, FormatBytes(newLimit))
+					}
+				} else if stats.UtilPercent < m.threshold*0.7 {
+					// IO is low (< 70% of threshold), gradually increase rate limit
+					if currentLimit < m.originalLimit {
+						newLimit := int64(float64(currentLimit) * (1.0 + m.adjustmentStep))
+						if newLimit > m.originalLimit {
+							newLimit = m.originalLimit
+						}
+						atomic.StoreInt64(&m.currentLimit, newLimit)
+						if newLimit > currentLimit {
+							i18n.Printf("\n[backup-helper] IO utilization low (%.1f%%), increasing rate limit to %s/s\n",
+								stats.UtilPercent, FormatBytes(newLimit))
+						}
+					}
+				}
+			}
 		}
-		i18n.Printf("    Trying macOS-style dd...\n")
-		// Try macOS-style (without special flags)
-		ddCmd = exec.Command("dd", "if=/dev/zero", "of=/tmp/backup-helper-iobench.tmp", "bs=1M", "count=10")
-		output, err = ddCmd.CombinedOutput()
+	}()
+}
+
+// Stop stops the monitoring
+func (m *IOMonitor) Stop() {
+	if atomic.LoadInt32(&m.isRunning) == 1 {
+		close(m.stopChan)
+	}
+}
+
+// GetStats returns current IO statistics
+func (m *IOMonitor) GetStats() *IOStats {
+	return m.stats
+}
+
+// GetCurrentLimit returns the current dynamic rate limit
+func (m *IOMonitor) GetCurrentLimit() int64 {
+	return atomic.LoadInt64(&m.currentLimit)
+}
+
+// GetCurrentIOStats reads current IO statistics using iostat
+func GetCurrentIOStats() (*IOStats, error) {
+	// Try iostat -x 1 1 (Linux) or iostat -w 1 2 (macOS)
+	// Linux format: device r/s w/s rkB/s wkB/s %util
+	// macOS format: device r/s w/s KB/s %util
+
+	var cmd *exec.Cmd
+	var parseFunc func([]byte) (*IOStats, error)
+
+	// Try Linux iostat first
+	cmd = exec.Command("iostat", "-x", "1", "1")
+	parseFunc = parseLinuxIostat
+
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		// Try macOS iostat (second sample, skip first averaged since boot)
+		cmd = exec.Command("iostat", "-w", "1", "2")
+		parseFunc = parseMacOSIostat
+		output, err = cmd.CombinedOutput()
 		if err != nil {
-			i18n.Printf("    macOS-style dd also failed: %v\n", err)
-			if len(output) > 0 {
-				i18n.Printf("    macOS dd output: %s\n", string(output))
+			return nil, fmt.Errorf("iostat command failed: %v", err)
+		}
+	}
+
+	return parseFunc(output)
+}
+
+func parseLinuxIostat(output []byte) (*IOStats, error) {
+	lines := strings.Split(string(output), "\n")
+	stats := &IOStats{}
+
+	// Linux iostat -x output format:
+	// Device r/s w/s rkB/s wkB/s rrqm/s wrqm/s r_await w_await aqu-sz rareq-sz wareq-sz svctm %util
+	// Skip header lines, find device lines (usually sda, sdb, etc.)
+	foundHeader := false
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+
+		// Find the header line
+		if strings.Contains(line, "Device") && strings.Contains(line, "%util") {
+			foundHeader = true
+			continue
+		}
+
+		if foundHeader {
+			parts := strings.Fields(line)
+			if len(parts) < 14 {
+				continue
+			}
+
+			// Skip loop devices and special devices
+			device := parts[0]
+			if strings.HasPrefix(device, "loop") || strings.HasPrefix(device, "dm-") {
+				continue
+			}
+
+			// Parse %util (last column)
+			utilStr := parts[len(parts)-1]
+			util, err := strconv.ParseFloat(utilStr, 64)
+			if err == nil && util > stats.UtilPercent {
+				stats.UtilPercent = util
+			}
+
+			// Parse r/s and w/s (columns 2 and 3)
+			if len(parts) > 3 {
+				if rIOPS, err := strconv.ParseFloat(parts[1], 64); err == nil {
+					stats.ReadIOPS += rIOPS
+				}
+				if wIOPS, err := strconv.ParseFloat(parts[2], 64); err == nil {
+					stats.WriteIOPS += wIOPS
+				}
+			}
+
+			// Parse rkB/s and wkB/s (columns 4 and 5)
+			if len(parts) > 5 {
+				if rkB, err := strconv.ParseFloat(parts[3], 64); err == nil {
+					stats.ReadBW += rkB / 1024 // Convert KB/s to MB/s
+				}
+				if wkB, err := strconv.ParseFloat(parts[4], 64); err == nil {
+					stats.WriteBW += wkB / 1024 // Convert KB/s to MB/s
+				}
 			}
 		}
 	}
 
-	// Clean up
-	os.Remove("/tmp/backup-helper-iobench.tmp")
+	return stats, nil
+}
 
-	if err != nil {
-		return 0, fmt.Errorf("dd command failed: %v, output: %s", err, string(output))
-	}
+func parseMacOSIostat(output []byte) (*IOStats, error) {
+	lines := strings.Split(string(output), "\n")
+	stats := &IOStats{}
 
-	// Log output for debugging
-	if len(output) > 0 {
-		outputLines := strings.Split(strings.TrimSpace(string(output)), "\n")
-		if len(outputLines) > 0 {
-			lastLine := outputLines[len(outputLines)-1]
-			i18n.Printf("    dd output (last line): %s\n", lastLine)
+	// macOS iostat -w output format:
+	// device r/s w/s KB/s ms/r ms/w %util
+	// First output is average since boot, second is current activity
+	// We want the last sample (current activity)
+
+	foundHeader := false
+	sampleCount := 0
+
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+
+		// Check if this is a header line
+		if strings.Contains(strings.ToLower(line), "device") && strings.Contains(line, "%util") {
+			foundHeader = true
+			sampleCount++
+			continue
+		}
+
+		// After finding header, collect data from the second sample
+		if foundHeader && sampleCount >= 2 {
+			parts := strings.Fields(line)
+			if len(parts) < 7 {
+				continue
+			}
+
+			// Skip disk0 (which is often system disk and not relevant for database)
+			device := parts[0]
+			if device == "disk0" || strings.HasPrefix(device, "/dev/") {
+				continue
+			}
+
+			// Parse %util (last column, column 7)
+			utilStr := parts[6]
+			util, err := strconv.ParseFloat(utilStr, 64)
+			if err == nil && util > stats.UtilPercent {
+				stats.UtilPercent = util
+			}
+
+			// Parse r/s and w/s (columns 2 and 3)
+			if rIOPS, err := strconv.ParseFloat(parts[1], 64); err == nil {
+				stats.ReadIOPS += rIOPS
+			}
+			if wIOPS, err := strconv.ParseFloat(parts[2], 64); err == nil {
+				stats.WriteIOPS += wIOPS
+			}
+
+			// Parse KB/s (column 4) - on macOS this is total KB/s
+			// We'll add it to WriteBW as backup operations are mostly writes
+			if kb, err := strconv.ParseFloat(parts[3], 64); err == nil {
+				stats.WriteBW += kb / 1024 // Convert KB/s to MB/s
+			}
 		}
 	}
 
-	return parseDDOutput(output)
+	return stats, nil
 }
 
+// DetectIOBandwidth is deprecated - no longer performs dd benchmark tests
+// Returns a default safe limit to avoid impacting production systems
 func DetectIOBandwidth() (int64, error) {
-	const numTests = 3
-	var bandwidths []int64
-	var sum int64
+	i18n.Printf("[backup-helper] Auto rate limiting enabled (using default safe limit)\n")
+	i18n.Printf("  Note: Real-time IO monitoring will be active during transfer\n")
+	i18n.Printf("  Default limit: 300 MB/s\n")
+	i18n.Printf("  Use --io-limit to manually set bandwidth limit if needed\n")
 
-	i18n.Printf("[backup-helper] Detecting IO bandwidth...\n")
-
-	for i := 0; i < numTests; i++ {
-		if i > 0 {
-			i18n.Printf("  Test %d/%d...\n", i+1, numTests)
-		} else {
-			i18n.Printf("  Test 1/%d...\n", numTests)
-		}
-
-		bandwidth, err := runDDTest()
-		if err != nil {
-			i18n.Printf("    Test failed: %v\n", err)
-			continue
-		}
-
-		if bandwidth <= 0 {
-			i18n.Printf("    Test returned invalid bandwidth: %d\n", bandwidth)
-			continue
-		}
-
-		i18n.Printf("    Test succeeded: %s/s\n", formatBytes(bandwidth))
-		bandwidths = append(bandwidths, bandwidth)
-		sum += bandwidth
-	}
-
-	if len(bandwidths) == 0 {
-		i18n.Printf("  Warning: All tests failed, using default 300 MB/s\n")
-		i18n.Printf("Note: Use --io-limit to manually set bandwidth limit if needed\n")
-		return 300 * 1024 * 1024, nil
-	}
-
-	averageBandwidth := sum / int64(len(bandwidths))
-
-	i18n.Printf("  Tests: %d/%d successful\n", len(bandwidths), numTests)
-	if len(bandwidths) > 1 {
-		i18n.Printf("  Results: %s/s (average of %d tests)\n", formatBytes(averageBandwidth), len(bandwidths))
-	} else {
-		i18n.Printf("  Result: %s/s\n", formatBytes(averageBandwidth))
-	}
-
-	return averageBandwidth, nil
+	// Return default safe limit - no destructive testing
+	return 300 * 1024 * 1024, nil
 }

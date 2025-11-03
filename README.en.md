@@ -215,23 +215,30 @@ The tool displays real-time progress information during backup upload:
 
 ## Bandwidth Detection & Rate Limiting
 
-- **Auto-Detection**: Use `--auto-limit-rate` to automatically detect disk IO bandwidth
-  - Tests actual write speed using `dd` command, runs 3 times and takes average
-  - Automatically limits to 80% of detected bandwidth to avoid impacting system performance
-  - Default: 300 MB/s (when detection fails)
+- **Auto Rate Limiting with Real-time Monitoring**: Use `--auto-limit-rate` to enable smart rate limiting
+  - **Safe Design**: No disk stress testing to avoid impacting production environments
+  - **Real-time IO Monitoring**: Monitors system IO utilization every 2 seconds during transfer
+  - **Dynamic Adjustment**: Automatically adjusts transfer speed based on IO usage
+    - IO utilization > 80%: Automatically reduces rate limit by 10%
+    - IO utilization < 56%: Gradually restores rate limit by 10%
+    - Minimum protection: Never lower than 10% of original limit
+  - **Default Limit**: 240 MB/s (80% of 300 MB/s)
   
 - **Manual Rate Limit**: Use `--io-limit` to manually specify upload bandwidth limit (bytes/sec)
 
 Example output:
 ```
-[backup-helper] Detecting IO bandwidth...
-  Test 2/3...
-  Test 3/3...
-  Tests: 3/3 successful
-  Results: 8.5 GB/s (average of 3 tests)
-[backup-helper] Detected IO bandwidth: 8.5 GB/s, limiting to 6.8 GB/s (80%)
+[backup-helper] Auto rate limiting enabled (using default safe limit)
+  Note: Real-time IO monitoring will be active during transfer
+  Default limit: 300 MB/s
+  Use --io-limit to manually set bandwidth limit if needed
+[backup-helper] Using safe default limit: 240.0 MB/s (80% of 300 MB/s)
+[backup-helper] Real-time IO monitoring active (threshold: 80%, auto-adjusting rate limit)
 
 Progress: 1.1 GB / 1.5 GB (73.3%) - 135.2 MB/s - Duration: 8.5s
+[backup-helper] IO utilization high (85.2%), reducing rate limit to 216.0 MB/s
+Progress: 1.3 GB / 1.5 GB (86.7%) - 120.5 MB/s - Duration: 11.2s
+[backup-helper] IO utilization low (48.3%), increasing rate limit to 237.6 MB/s
 [backup-helper] Upload completed!
   Total uploaded: 1.5 GB
   Duration: 12s

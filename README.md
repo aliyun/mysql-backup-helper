@@ -216,23 +216,30 @@ cat backup.xb | ./backup-helper --config config.json --existed-backup - --mode=s
 
 ## 带宽检测与限速
 
-- **自动检测**：使用 `--auto-limit-rate` 可自动检测磁盘 IO 带宽
-  - 通过 `dd` 命令测试实际写入速度，执行 3 次取平均值
-  - 自动限速到检测到的带宽的 80%，避免影响系统性能
-  - 默认值：300 MB/s（当检测失败时）
+- **自动限速与实时监控**：使用 `--auto-limit-rate` 启用智能限速
+  - **安全设计**：不再进行磁盘压测，避免影响生产环境
+  - **实时 IO 监控**：传输过程中每 2 秒监控一次系统 IO 使用率
+  - **动态调整**：根据 IO 使用情况自动调整传输速度
+    - IO 使用率 > 80%：自动降低限速 10%
+    - IO 使用率 < 56%：逐步恢复限速 10%
+    - 最低保护：不低于原始限速的 10%
+  - **默认限速**：240 MB/s（300 MB/s 的 80%）
   
 - **手动限速**：使用 `--io-limit` 手动指定上传带宽限制（字节/秒）
 
 示例输出：
 ```
-[backup-helper] Detecting IO bandwidth...
-  Test 2/3...
-  Test 3/3...
-  Tests: 3/3 successful
-  Results: 8.5 GB/s (average of 3 tests)
-[backup-helper] Detected IO bandwidth: 8.5 GB/s, limiting to 6.8 GB/s (80%)
+[backup-helper] Auto rate limiting enabled (using default safe limit)
+  Note: Real-time IO monitoring will be active during transfer
+  Default limit: 300 MB/s
+  Use --io-limit to manually set bandwidth limit if needed
+[backup-helper] Using safe default limit: 240.0 MB/s (80% of 300 MB/s)
+[backup-helper] Real-time IO monitoring active (threshold: 80%, auto-adjusting rate limit)
 
 Progress: 1.1 GB / 1.5 GB (73.3%) - 135.2 MB/s - Duration: 8.5s
+[backup-helper] IO utilization high (85.2%), reducing rate limit to 216.0 MB/s
+Progress: 1.3 GB / 1.5 GB (86.7%) - 120.5 MB/s - Duration: 11.2s
+[backup-helper] IO utilization low (48.3%), increasing rate limit to 237.6 MB/s
 [backup-helper] Upload completed!
   Total uploaded: 1.5 GB
   Duration: 12s
