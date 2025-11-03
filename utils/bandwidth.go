@@ -78,19 +78,22 @@ func parseDDOutput(output []byte) (int64, error) {
 
 func runDDTest() (int64, error) {
 	// Try Linux-style first (with direct I/O)
-	ddCmd := exec.Command("dd", "if=/dev/zero", "of=/tmp/backup-helper-iobench.tmp", "bs=1M", "count=10", "oflag=direct", "conv=fdatasync", "2>&1")
+	ddCmd := exec.Command("dd", "if=/dev/zero", "of=/tmp/backup-helper-iobench.tmp", "bs=1M", "count=10", "oflag=direct", "conv=fdatasync")
 	output, err := ddCmd.CombinedOutput()
 
 	if err != nil {
 		i18n.Printf("    Linux-style dd failed: %v\n", err)
+		if len(output) > 0 {
+			i18n.Printf("    Linux dd output: %s\n", string(output))
+		}
 		i18n.Printf("    Trying macOS-style dd...\n")
 		// Try macOS-style (without special flags)
-		ddCmd = exec.Command("dd", "if=/dev/zero", "of=/tmp/backup-helper-iobench.tmp", "bs=1M", "count=10", "2>&1")
+		ddCmd = exec.Command("dd", "if=/dev/zero", "of=/tmp/backup-helper-iobench.tmp", "bs=1M", "count=10")
 		output, err = ddCmd.CombinedOutput()
 		if err != nil {
 			i18n.Printf("    macOS-style dd also failed: %v\n", err)
 			if len(output) > 0 {
-				i18n.Printf("    Output: %s\n", string(output))
+				i18n.Printf("    macOS dd output: %s\n", string(output))
 			}
 		}
 	}
