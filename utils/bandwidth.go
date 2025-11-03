@@ -14,30 +14,45 @@ func parseDDOutput(output []byte) (int64, error) {
 	outputStr := string(output)
 	lines := strings.Split(outputStr, "\n")
 
-	// Try parsing Linux format: "10485760 bytes (10 MB, 10 MiB) copied, 0.5 s, 20.9 MB/s"
+	// Try parsing format with speed unit: "10485760 bytes (10 MB) copied, 0.5 s, 20.9 MB/s"
+	// or "10485760 bytes (10 MB) copied, 0.00976458 s, 1.1 GB/s"
 	for _, line := range lines {
-		if strings.Contains(line, "copied,") && strings.Contains(line, "MB/s") {
-			i18n.Printf("    Found Linux format line: %s\n", line)
-			parts := strings.Fields(line)
-			mbIndex := -1
-			for i, part := range parts {
-				if part == "MB/s" {
-					mbIndex = i
-					break
+		if strings.Contains(line, "copied,") {
+			// Check for speed units: GB/s, MB/s, KB/s
+			units := []string{"GB/s", "MB/s", "KB/s"}
+			for _, unit := range units {
+				if strings.Contains(line, unit) {
+					i18n.Printf("    Found speed format line with %s: %s\n", unit, line)
+					parts := strings.Fields(line)
+					unitIndex := -1
+					for i, part := range parts {
+						if part == unit {
+							unitIndex = i
+							break
+						}
+					}
+					if unitIndex > 0 {
+						valueStr := parts[unitIndex-1]
+						i18n.Printf("    Parsing %s value: %s\n", unit, valueStr)
+						if value, err := strconv.ParseFloat(valueStr, 64); err == nil && value > 0 {
+							var bandwidth int64
+							switch unit {
+							case "GB/s":
+								bandwidth = int64(value * 1024 * 1024 * 1024)
+							case "MB/s":
+								bandwidth = int64(value * 1024 * 1024)
+							case "KB/s":
+								bandwidth = int64(value * 1024)
+							}
+							i18n.Printf("    Parsed bandwidth: %.2f %s = %d bytes/s\n", value, unit, bandwidth)
+							return bandwidth, nil
+						} else if err != nil {
+							i18n.Printf("    Failed to parse %s value '%s': %v\n", unit, valueStr, err)
+						}
+					} else {
+						i18n.Printf("    Could not find %s in line: %s\n", unit, line)
+					}
 				}
-			}
-			if mbIndex > 0 {
-				mbStr := parts[mbIndex-1]
-				i18n.Printf("    Parsing MB/s value: %s\n", mbStr)
-				if mb, err := strconv.ParseFloat(mbStr, 64); err == nil && mb > 0 {
-					bandwidth := int64(mb * 1024 * 1024)
-					i18n.Printf("    Parsed bandwidth: %.2f MB/s = %d bytes/s\n", mb, bandwidth)
-					return bandwidth, nil
-				} else if err != nil {
-					i18n.Printf("    Failed to parse MB/s value '%s': %v\n", mbStr, err)
-				}
-			} else {
-				i18n.Printf("    Could not find MB/s in line: %s\n", line)
 			}
 		}
 	}
