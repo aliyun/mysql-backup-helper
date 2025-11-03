@@ -223,7 +223,9 @@ func main() {
 				os.Exit(1)
 			}
 		case "stream":
-			if streamPort == 0 {
+			// Only use config value if command line didn't specify and config has non-zero value
+			// streamPort 0 means auto-find available port
+			if streamPort == 0 && !isFlagPassed("stream-port") && cfg.StreamPort > 0 {
 				streamPort = cfg.StreamPort
 			}
 			// handshake priority：command line > config > default
@@ -401,8 +403,9 @@ func main() {
 			}
 			i18n.Printf("[backup-helper] OSS upload completed!\n")
 		case "stream":
-			// Set stream port
-			if streamPort == 0 {
+			// Only use config value if command line didn't specify and config has non-zero value
+			// streamPort 0 means auto-find available port
+			if streamPort == 0 && !isFlagPassed("stream-port") && cfg.StreamPort > 0 {
 				streamPort = cfg.StreamPort
 			}
 
