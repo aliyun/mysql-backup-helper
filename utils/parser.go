@@ -4,49 +4,72 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"unicode"
 )
 
-// ParseBandwidth parses bandwidth string with unit support
-// Examples: "100MB/s", "1.5GB/s", "500KB/s", "1000000000" (bytes)
-func ParseBandwidth(input string) (int64, error) {
-	input = strings.TrimSpace(input)
-	if input == "" {
-		return 0, fmt.Errorf("empty bandwidth string")
+// ParseRateLimit parses a rate limit string with units (e.g., "100MB/s", "1GB/s", "500KB/s")
+// Returns bytes per second
+// Supported units: B/s, KB/s, MB/s, GB/s, TB/s (case insensitive)
+func ParseRateLimit(rateStr string) (int64, error) {
+	if rateStr == "" || rateStr == "0" {
+		return 0, nil
 	}
+
+	rateStr = strings.TrimSpace(rateStr)
+	rateStr = strings.ToUpper(rateStr)
 
 	// Remove /s suffix if present
-	input = strings.TrimSuffix(strings.ToUpper(input), "/S")
-	input = strings.TrimSpace(input)
+	rateStr = strings.TrimSuffix(rateStr, "/S")
+	rateStr = strings.TrimSpace(rateStr)
 
-	// Try to find unit suffix
-	units := map[string]int64{
-		"B":   1,
-		"KB":  1024,
-		"MB":  1024 * 1024,
-		"GB":  1024 * 1024 * 1024,
-		"TB":  1024 * 1024 * 1024 * 1024,
-		"KIB": 1024,
-		"MIB": 1024 * 1024,
-		"GIB": 1024 * 1024 * 1024,
-		"TIB": 1024 * 1024 * 1024 * 1024,
-	}
-
-	// Try to match unit
-	for unit, multiplier := range units {
-		if strings.HasSuffix(input, unit) {
-			valueStr := strings.TrimSuffix(input, unit)
-			value, err := strconv.ParseFloat(valueStr, 64)
-			if err != nil {
-				return 0, fmt.Errorf("invalid number in bandwidth string '%s': %v", input, err)
-			}
-			return int64(value * float64(multiplier)), nil
+	// Find where the number ends
+	var numEnd int
+	for i, r := range rateStr {
+		if !unicode.IsDigit(r) && r != '.' {
+			numEnd = i
+			break
 		}
+		numEnd = i + 1
 	}
 
-	// No unit found, try parsing as pure number (bytes)
-	value, err := strconv.ParseInt(input, 10, 64)
-	if err != nil {
-		return 0, fmt.Errorf("invalid bandwidth format '%s': expected format like '100MB/s' or bytes number", input)
+	if numEnd == 0 {
+		return 0, fmt.Errorf("invalid rate limit format: %s", rateStr)
 	}
-	return value, nil
+
+	// Parse number
+	numStr := rateStr[:numEnd]
+	value, err := strconv.ParseFloat(numStr, 64)
+	if err != nil {
+		return 0, fmt.Errorf("invalid number in rate limit: %s", numStr)
+	}
+
+	if value <= 0 {
+		return 0, nil
+	}
+
+	// Parse unit
+	unitStr := strings.TrimSpace(rateStr[numEnd:])
+	if unitStr == "" {
+		// Default to bytes if no unit specified
+		return int64(value), nil
+	}
+
+	// Map units to multipliers (base 1024)
+	var multiplier float64
+	switch unitStr {
+	case "B", "BYTE", "BYTES":
+		multiplier = 1
+	case "KB", "K":
+		multiplier = 1024
+	case "MB", "M":
+		multiplier = 1024 * 1024
+	case "GB", "G":
+		multiplier = 1024 * 1024 * 1024
+	case "TB", "T":
+		multiplier = 1024 * 1024 * 1024 * 1024
+	default:
+		return 0, fmt.Errorf("unsupported unit: %s (supported: B, KB, MB, GB, TB)", unitStr)
+	}
+
+	return int64(value * multiplier), nil
 }

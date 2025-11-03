@@ -38,7 +38,6 @@ func UploadReaderToOSS(cfg *Config, objectName string, reader io.Reader, totalSi
 
 	// Start IO monitoring if auto-limit-rate is enabled
 	var ioMonitor *IOMonitor
-	var rateLimitedReader *RateLimitedReader
 	var monitorCtx context.Context
 	var cancelMonitor context.CancelFunc
 	if cfg.AutoLimitRate {
@@ -77,33 +76,6 @@ func UploadReaderToOSS(cfg *Config, objectName string, reader io.Reader, totalSi
 	if bufferSize == 0 {
 		bufferSize = 1024 * 1024 * 100 // 100MB
 	}
-
-	// Apply client-side rate limiting if Traffic is set
-	if cfg.Traffic > 0 {
-		rateLimitedReader = NewRateLimitedReader(reader, cfg.Traffic)
-		reader = rateLimitedReader
-		i18n.Printf("[backup-helper] OSS upload rate limiting active: %s/s\n", FormatBytes(cfg.Traffic))
-
-		// Update rate limiter if IO monitoring is active
-		if cfg.AutoLimitRate && ioMonitor != nil {
-			go func() {
-				ticker := time.NewTicker(2 * time.Second)
-				defer ticker.Stop()
-				for {
-					select {
-					case <-monitorCtx.Done():
-						return
-					case <-ticker.C:
-						if ioMonitor != nil && rateLimitedReader != nil {
-							currentLimit := ioMonitor.GetCurrentLimit()
-							rateLimitedReader.UpdateRateLimit(currentLimit)
-						}
-					}
-				}
-			}()
-		}
-	}
-
 	// Wrap reader with progress tracker
 	progressReader := NewProgressReader(reader, tracker, bufferSize)
 	bufReader := bufio.NewReaderSize(progressReader, bufferSize)
@@ -117,14 +89,7 @@ func UploadReaderToOSS(cfg *Config, objectName string, reader io.Reader, totalSi
 			data := p[:n]
 			waitSender.Add(1)
 
-			// Update rate limiter if IO monitoring is active
-			if ioMonitor != nil && rateLimitedReader != nil {
-				currentLimit := ioMonitor.GetCurrentLimit()
-				rateLimitedReader.UpdateRateLimit(currentLimit)
-			}
-
-			// OSS SDK TrafficLimitHeader is for server-side limiting
-			// We use client-side rate limiting instead, but still pass it for reference
+			// Use dynamic rate limit if IO monitoring is active
 			trafficLimit := cfg.Traffic
 			if ioMonitor != nil {
 				trafficLimit = ioMonitor.GetCurrentLimit()

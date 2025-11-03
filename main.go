@@ -39,7 +39,7 @@ func main() {
 
 	flag.BoolVar(&doBackup, "backup", false, "Run xtrabackup and upload to OSS")
 	flag.Int64Var(&estimatedSize, "estimated-size", 0, "Estimated backup size in bytes (for progress tracking)")
-	flag.StringVar(&ioLimitStr, "io-limit", "", "IO bandwidth limit (supports units: B, KB, MB, GB, TB, KiB, MiB, GiB, TiB, e.g. '100MB/s' or '100MB')")
+	flag.StringVar(&ioLimitStr, "io-limit", "", "IO bandwidth limit with unit (e.g., '100MB/s', '1GB/s', '500KB/s') or bytes per second")
 	flag.BoolVar(&autoLimitRate, "auto-limit-rate", false, "Automatically detect and limit IO bandwidth")
 	flag.StringVar(&existedBackup, "existed-backup", "", "Path to existing xtrabackup backup file to upload (use '-' for stdin)")
 	flag.BoolVar(&showVersion, "version", false, "Show version information")
@@ -113,18 +113,16 @@ func main() {
 		estimatedSize = cfg.EstimatedSize
 	}
 
-	// Parse io-limit from command line or config
+	// Parse ioLimit from command line or config
 	if ioLimitStr != "" {
-		var err error
-		ioLimit, err = utils.ParseBandwidth(ioLimitStr)
+		parsedLimit, err := utils.ParseRateLimit(ioLimitStr)
 		if err != nil {
 			i18n.Printf("Error parsing --io-limit '%s': %v\n", ioLimitStr, err)
 			os.Exit(1)
 		}
-		i18n.Printf("[backup-helper] Parsed --io-limit: %s/s\n", formatBytes(ioLimit))
+		ioLimit = parsedLimit
 	} else if ioLimit == 0 && cfg.IOLimit > 0 {
 		ioLimit = cfg.IOLimit
-		i18n.Printf("[backup-helper] Using io-limit from config: %s/s\n", formatBytes(ioLimit))
 	}
 
 	if !autoLimitRate {
@@ -153,13 +151,7 @@ func main() {
 	// Update traffic config if IO limit is set
 	if ioLimit > 0 {
 		cfg.Traffic = ioLimit
-		i18n.Printf("[backup-helper] Rate limit set to: %s/s\n", formatBytes(ioLimit))
-	} else {
-		// If no limit is set, don't override SetDefaults() value
-		// But log the current Traffic value for debugging
-		if cfg.Traffic > 0 {
-			i18n.Printf("[backup-helper] Using default Traffic limit: %s/s\n", formatBytes(cfg.Traffic))
-		}
+		i18n.Printf("[backup-helper] IO rate limit set to: %s/s\n", formatBytes(ioLimit))
 	}
 
 	// 4. If --backup, run backup/upload
@@ -272,14 +264,15 @@ func main() {
 			}
 			defer closer()
 
-			// Apply rate limiting for stream mode (always if Traffic is set, with monitoring if autoLimitRate)
+			// Apply rate limiting for stream mode
 			var ioMonitor *utils.IOMonitor
 			var rateLimitedWriter *utils.RateLimitedWriter
+			writer := tcpWriter
 
-			// Always create rate limiter if Traffic limit is set
+			// Always apply rate limit if configured (for manual ioLimit)
 			if cfg.Traffic > 0 {
 				rateLimitedWriter = utils.NewRateLimitedWriter(tcpWriter, cfg.Traffic)
-				i18n.Printf("[backup-helper] TCP stream rate limiting active: %s/s\n", formatBytes(cfg.Traffic))
+				writer = rateLimitedWriter
 			}
 
 			// Start IO monitoring if auto-limit-rate is enabled
@@ -294,9 +287,10 @@ func main() {
 				ioMonitor.Start(monitorCtx, 2*time.Second)
 				defer ioMonitor.Stop()
 
-				// If rate limiter doesn't exist yet, create it
+				// If we don't have a rate limiter yet, create one
 				if rateLimitedWriter == nil {
 					rateLimitedWriter = utils.NewRateLimitedWriter(tcpWriter, cfg.Traffic)
+					writer = rateLimitedWriter
 				}
 
 				// Start goroutine to update rate limit based on IO monitoring
@@ -317,11 +311,6 @@ func main() {
 				}()
 
 				i18n.Printf("[backup-helper] Real-time IO monitoring active (threshold: 80%%, auto-adjusting rate limit)\n")
-			}
-
-			writer := tcpWriter
-			if rateLimitedWriter != nil {
-				writer = rateLimitedWriter
 			}
 
 			_, err = io.Copy(writer, reader)
@@ -520,14 +509,15 @@ func main() {
 			}
 			defer closer()
 
-			// Apply rate limiting for stream mode (always if Traffic is set, with monitoring if autoLimitRate)
+			// Apply rate limiting for stream mode
 			var ioMonitor *utils.IOMonitor
 			var rateLimitedWriter *utils.RateLimitedWriter
+			writer := tcpWriter
 
-			// Always create rate limiter if Traffic limit is set
+			// Always apply rate limit if configured (for manual ioLimit)
 			if cfg.Traffic > 0 {
 				rateLimitedWriter = utils.NewRateLimitedWriter(tcpWriter, cfg.Traffic)
-				i18n.Printf("[backup-helper] TCP stream rate limiting active: %s/s\n", formatBytes(cfg.Traffic))
+				writer = rateLimitedWriter
 			}
 
 			// Start IO monitoring if auto-limit-rate is enabled
@@ -542,9 +532,10 @@ func main() {
 				ioMonitor.Start(monitorCtx, 2*time.Second)
 				defer ioMonitor.Stop()
 
-				// If rate limiter doesn't exist yet, create it
+				// If we don't have a rate limiter yet, create one
 				if rateLimitedWriter == nil {
 					rateLimitedWriter = utils.NewRateLimitedWriter(tcpWriter, cfg.Traffic)
+					writer = rateLimitedWriter
 				}
 
 				// Start goroutine to update rate limit based on IO monitoring
@@ -569,11 +560,6 @@ func main() {
 
 			// Stream the backup data
 			i18n.Printf("[backup-helper] Streaming backup data...\n")
-
-			writer := tcpWriter
-			if rateLimitedWriter != nil {
-				writer = rateLimitedWriter
-			}
 
 			_, err = io.Copy(writer, reader)
 			if err != nil {

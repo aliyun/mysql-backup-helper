@@ -3,9 +3,17 @@ package utils
 import (
 	"database/sql"
 	"fmt"
-	_ "github.com/go-sql-driver/mysql"
+	"log"
 
+	_ "github.com/go-sql-driver/mysql"
 )
+
+// check is a helper function to handle errors
+func check(err error) {
+	if err != nil {
+		log.Fatal(err)
+	}
+}
 
 func GetConnection(host string, port int, user string, password string) *sql.DB {
 	dataSource := fmt.Sprintf("%s:%s@tcp(%s:%d)/", user, password, host, port)

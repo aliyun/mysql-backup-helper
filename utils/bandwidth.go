@@ -66,18 +66,14 @@ func (m *IOMonitor) Start(ctx context.Context, interval time.Duration) {
 				atomic.StoreInt32(&m.isRunning, 0)
 				return
 			case <-ticker.C:
-				i18n.Printf("  [DEBUG] === IO Monitoring Check (interval) ===\n")
 				stats, err := GetCurrentIOStats()
 				if err != nil {
-					i18n.Printf("  [DEBUG] Failed to get IO stats: %v\n", err)
-					// Continue monitoring, don't exit
+					// Silently fail, don't spam errors
 					continue
 				}
 				m.stats = stats
-				i18n.Printf("  [DEBUG] Current IO utilization: %.1f%%\n", stats.UtilPercent)
 
 				currentLimit := atomic.LoadInt64(&m.currentLimit)
-				i18n.Printf("  [DEBUG] Current rate limit: %s/s\n", FormatBytes(currentLimit))
 
 				// Dynamic rate adjustment based on IO utilization
 				if stats.UtilPercent > m.threshold {
@@ -141,55 +137,26 @@ func GetCurrentIOStats() (*IOStats, error) {
 
 	var cmd *exec.Cmd
 	var parseFunc func([]byte) (*IOStats, error)
-	var platform string
 
 	// Try Linux iostat first
 	cmd = exec.Command("iostat", "-x", "1", "1")
 	parseFunc = parseLinuxIostat
-	platform = "Linux"
 
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		// Try macOS iostat (second sample, skip first averaged since boot)
 		cmd = exec.Command("iostat", "-w", "1", "2")
 		parseFunc = parseMacOSIostat
-		platform = "macOS"
 		output, err = cmd.CombinedOutput()
 		if err != nil {
-			i18n.Printf("  [DEBUG] iostat command failed: %v\n", err)
-			i18n.Printf("  [DEBUG] Attempted commands: 'iostat -x 1 1' (Linux) and 'iostat -w 1 2' (macOS)\n")
 			return nil, fmt.Errorf("iostat command failed: %v", err)
 		}
 	}
 
-	i18n.Printf("  [DEBUG] Running iostat on %s platform\n", platform)
-	i18n.Printf("  [DEBUG] iostat raw output (%d bytes):\n", len(output))
-	outputLines := strings.Split(string(output), "\n")
-	maxLines := 30
-	for i, line := range outputLines {
-		if i < maxLines || strings.TrimSpace(line) != "" {
-			if i >= maxLines {
-				i18n.Printf("  [DEBUG] ... (truncated, showing first %d lines)\n", maxLines)
-				break
-			}
-			i18n.Printf("  [DEBUG]   [%d] %s\n", i+1, line)
-		}
-	}
-
-	stats, parseErr := parseFunc(output)
-	if parseErr != nil {
-		i18n.Printf("  [DEBUG] Parse error: %v\n", parseErr)
-		return nil, parseErr
-	}
-
-	i18n.Printf("  [DEBUG] Parsed IO stats: Util=%.1f%%, ReadIOPS=%.1f, WriteIOPS=%.1f, ReadBW=%.1f MB/s, WriteBW=%.1f MB/s\n",
-		stats.UtilPercent, stats.ReadIOPS, stats.WriteIOPS, stats.ReadBW, stats.WriteBW)
-
-	return stats, nil
+	return parseFunc(output)
 }
 
 func parseLinuxIostat(output []byte) (*IOStats, error) {
-	i18n.Printf("  [DEBUG] Parsing Linux iostat format...\n")
 	lines := strings.Split(string(output), "\n")
 	stats := &IOStats{}
 
@@ -254,7 +221,6 @@ func parseLinuxIostat(output []byte) (*IOStats, error) {
 }
 
 func parseMacOSIostat(output []byte) (*IOStats, error) {
-	i18n.Printf("  [DEBUG] Parsing macOS iostat format...\n")
 	lines := strings.Split(string(output), "\n")
 	stats := &IOStats{}
 
@@ -283,27 +249,20 @@ func parseMacOSIostat(output []byte) (*IOStats, error) {
 		if foundHeader && sampleCount >= 2 {
 			parts := strings.Fields(line)
 			if len(parts) < 7 {
-				i18n.Printf("  [DEBUG] Skipping line with %d fields (need 7): %s\n", len(parts), line)
 				continue
 			}
 
 			// Skip disk0 (which is often system disk and not relevant for database)
 			device := parts[0]
 			if device == "disk0" || strings.HasPrefix(device, "/dev/") {
-				i18n.Printf("  [DEBUG] Skipping device: %s\n", device)
 				continue
 			}
-
-			i18n.Printf("  [DEBUG] Processing device: %s (sample %d)\n", device, sampleCount)
 
 			// Parse %util (last column, column 7)
 			utilStr := parts[6]
 			util, err := strconv.ParseFloat(utilStr, 64)
 			if err == nil && util > stats.UtilPercent {
-				i18n.Printf("  [DEBUG]   %util: %s -> %.1f%%\n", utilStr, util)
 				stats.UtilPercent = util
-			} else if err != nil {
-				i18n.Printf("  [DEBUG]   Failed to parse %util '%s': %v\n", utilStr, err)
 			}
 
 			// Parse r/s and w/s (columns 2 and 3)
