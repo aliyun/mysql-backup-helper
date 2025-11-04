@@ -255,7 +255,7 @@ func main() {
 				streamKey = cfg.StreamKey
 			}
 			// streamPort can be 0 now (auto-find available port)
-			tcpWriter, _, closer, actualPort, localIP, err := utils.StartStreamServer(streamPort, enableHandshake, streamKey, totalSize)
+			tcpWriter, tracker, closer, actualPort, localIP, err := utils.StartStreamServer(streamPort, enableHandshake, streamKey, totalSize)
 			_ = actualPort // Port info already displayed in StartStreamServer
 			_ = localIP    // IP info already displayed in StartStreamServer
 			if err != nil {
@@ -276,8 +276,10 @@ func main() {
 			}
 
 			// Start IO monitoring if auto-limit-rate is enabled
+			var monitorCtx context.Context
+			var cancelMonitor context.CancelFunc
 			if cfg.AutoLimitRate {
-				monitorCtx, cancelMonitor := context.WithCancel(context.Background())
+				monitorCtx, cancelMonitor = context.WithCancel(context.Background())
 				defer cancelMonitor()
 
 				ioMonitor = utils.NewIOMonitor(80.0, cfg.Traffic, func(stats *utils.IOStats) {
@@ -312,6 +314,54 @@ func main() {
 
 				i18n.Printf("[backup-helper] Real-time IO monitoring active (threshold: 80%%, auto-adjusting rate limit)\n")
 			}
+
+			// Start goroutine to update IO info in progress tracker
+			updateCtx, cancelUpdate := context.WithCancel(context.Background())
+			defer cancelUpdate()
+			go func() {
+				ticker := time.NewTicker(2 * time.Second)
+				defer ticker.Stop()
+				for {
+					select {
+					case <-updateCtx.Done():
+						return
+					case <-ticker.C:
+						var ioUtil float64
+						var currentLimit int64
+
+						// Get IO stats if available
+						if ioMonitor != nil {
+							stats := ioMonitor.GetStats()
+							if stats != nil {
+								ioUtil = stats.UtilPercent
+							}
+							currentLimit = ioMonitor.GetCurrentLimit()
+						} else if rateLimitedWriter != nil {
+							// Manual limit, get IO stats directly
+							stats, err := utils.GetCurrentIOStats()
+							if err == nil {
+								ioUtil = stats.UtilPercent
+							}
+							currentLimit = rateLimitedWriter.GetCurrentLimit()
+						} else if cfg.Traffic > 0 {
+							// Manual limit without rate limiter (shouldn't happen, but just in case)
+							stats, err := utils.GetCurrentIOStats()
+							if err == nil {
+								ioUtil = stats.UtilPercent
+							}
+							currentLimit = cfg.Traffic
+						} else {
+							// Try to get IO stats anyway
+							stats, err := utils.GetCurrentIOStats()
+							if err == nil {
+								ioUtil = stats.UtilPercent
+							}
+						}
+
+						tracker.SetIOInfo(ioUtil, currentLimit)
+					}
+				}
+			}()
 
 			_, err = io.Copy(writer, reader)
 			if err != nil {
@@ -500,7 +550,7 @@ func main() {
 				i18n.Printf("[backup-helper] Starting TCP stream server (auto-find available port)...\n")
 			}
 
-			tcpWriter, _, closer, actualPort, localIP, err := utils.StartStreamServer(streamPort, enableHandshake, streamKey, totalSize)
+			tcpWriter, tracker, closer, actualPort, localIP, err := utils.StartStreamServer(streamPort, enableHandshake, streamKey, totalSize)
 			_ = actualPort // Port info already displayed in StartStreamServer
 			_ = localIP    // IP info already displayed in StartStreamServer
 			if err != nil {
@@ -521,8 +571,10 @@ func main() {
 			}
 
 			// Start IO monitoring if auto-limit-rate is enabled
+			var monitorCtx context.Context
+			var cancelMonitor context.CancelFunc
 			if cfg.AutoLimitRate {
-				monitorCtx, cancelMonitor := context.WithCancel(context.Background())
+				monitorCtx, cancelMonitor = context.WithCancel(context.Background())
 				defer cancelMonitor()
 
 				ioMonitor = utils.NewIOMonitor(80.0, cfg.Traffic, func(stats *utils.IOStats) {
@@ -557,6 +609,54 @@ func main() {
 
 				i18n.Printf("[backup-helper] Real-time IO monitoring active (threshold: 80%%, auto-adjusting rate limit)\n")
 			}
+
+			// Start goroutine to update IO info in progress tracker
+			updateCtx, cancelUpdate := context.WithCancel(context.Background())
+			defer cancelUpdate()
+			go func() {
+				ticker := time.NewTicker(2 * time.Second)
+				defer ticker.Stop()
+				for {
+					select {
+					case <-updateCtx.Done():
+						return
+					case <-ticker.C:
+						var ioUtil float64
+						var currentLimit int64
+
+						// Get IO stats if available
+						if ioMonitor != nil {
+							stats := ioMonitor.GetStats()
+							if stats != nil {
+								ioUtil = stats.UtilPercent
+							}
+							currentLimit = ioMonitor.GetCurrentLimit()
+						} else if rateLimitedWriter != nil {
+							// Manual limit, get IO stats directly
+							stats, err := utils.GetCurrentIOStats()
+							if err == nil {
+								ioUtil = stats.UtilPercent
+							}
+							currentLimit = rateLimitedWriter.GetCurrentLimit()
+						} else if cfg.Traffic > 0 {
+							// Manual limit without rate limiter (shouldn't happen, but just in case)
+							stats, err := utils.GetCurrentIOStats()
+							if err == nil {
+								ioUtil = stats.UtilPercent
+							}
+							currentLimit = cfg.Traffic
+						} else {
+							// Try to get IO stats anyway
+							stats, err := utils.GetCurrentIOStats()
+							if err == nil {
+								ioUtil = stats.UtilPercent
+							}
+						}
+
+						tracker.SetIOInfo(ioUtil, currentLimit)
+					}
+				}
+			}()
 
 			// Stream the backup data
 			i18n.Printf("[backup-helper] Streaming backup data...\n")

@@ -57,6 +57,47 @@ func UploadReaderToOSS(cfg *Config, objectName string, reader io.Reader, totalSi
 		i18n.Printf("[backup-helper] Real-time IO monitoring active (threshold: 80%%, auto-adjusting rate limit)\n")
 	}
 
+	// Start goroutine to update IO info in progress tracker
+	updateCtx, cancelUpdate := context.WithCancel(context.Background())
+	defer cancelUpdate()
+	go func() {
+		ticker := time.NewTicker(2 * time.Second)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-updateCtx.Done():
+				return
+			case <-ticker.C:
+				var ioUtil float64
+				var currentLimit int64
+
+				// Get IO stats if available
+				if ioMonitor != nil {
+					stats := ioMonitor.GetStats()
+					if stats != nil {
+						ioUtil = stats.UtilPercent
+					}
+					currentLimit = ioMonitor.GetCurrentLimit()
+				} else if cfg.Traffic > 0 {
+					// Manual limit, get IO stats directly
+					stats, err := GetCurrentIOStats()
+					if err == nil {
+						ioUtil = stats.UtilPercent
+					}
+					currentLimit = cfg.Traffic
+				} else {
+					// Try to get IO stats anyway
+					stats, err := GetCurrentIOStats()
+					if err == nil {
+						ioUtil = stats.UtilPercent
+					}
+				}
+
+				tracker.SetIOInfo(ioUtil, currentLimit)
+			}
+		}
+	}()
+
 	client, err := oss.New(cfg.Endpoint, cfg.AccessKeyId, cfg.AccessKeySecret)
 	if err != nil {
 		return err
