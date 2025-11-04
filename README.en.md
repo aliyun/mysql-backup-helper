@@ -81,6 +81,8 @@ A high-efficiency MySQL physical backup and OSS upload tool. Supports Percona Xt
 | --existed-backup     | Path to existing xtrabackup backup file to upload or stream (use '-' for stdin) |
 | --estimated-size     | Estimated backup size with units (e.g., '100MB', '1GB') or bytes (for progress tracking) |
 | --io-limit           | IO bandwidth limit with units (e.g., '100MB/s', '1GB/s') or bytes per second. Use -1 for unlimited speed |
+| --extract-to         | Download mode: Extract backup data directly to directory using xbstream (requires xbstream in PATH) |
+| --extract-compress-type | Compression type for extraction: 'zstd' or 'qp'/'qpress' (only needed if backup is compressed) |
 | --version, -v        | Show version information                                               |
 
 ---
