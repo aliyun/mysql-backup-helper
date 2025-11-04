@@ -152,6 +152,9 @@ func main() {
 			i18n.Printf("[backup-helper] Rate limiting disabled (unlimited speed)\n")
 		} else if ioLimit > 0 {
 			i18n.Printf("[backup-helper] IO rate limit set to: %s/s\n", formatBytes(ioLimit))
+		} else if cfg.Traffic > 0 {
+			// Using default rate limit
+			i18n.Printf("[backup-helper] IO rate limit set to: %s/s (default)\n", formatBytes(cfg.Traffic))
 		}
 
 		// Check xtrabackup version (run early)
@@ -348,6 +351,9 @@ func main() {
 			i18n.Printf("[backup-helper] Rate limiting disabled (unlimited speed)\n")
 		} else if ioLimit > 0 {
 			i18n.Printf("[backup-helper] IO rate limit set to: %s/s\n", formatBytes(ioLimit))
+		} else if cfg.Traffic > 0 {
+			// Using default rate limit
+			i18n.Printf("[backup-helper] IO rate limit set to: %s/s (default)\n", formatBytes(cfg.Traffic))
 		}
 
 		// Get reader from existing backup file or stdin
