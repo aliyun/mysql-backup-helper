@@ -163,8 +163,8 @@ func StartStreamReceiver(port int, enableHandshake bool, handshakeKey string, to
 	fmt.Printf("[backup-helper] Listening on %s:%d\n", localIP, actualPort)
 	fmt.Printf("[backup-helper] Waiting for remote connection...\n")
 
-	// Create progress tracker
-	tracker := NewProgressTracker(totalSize)
+	// Create progress tracker for download mode
+	tracker := NewDownloadProgressTracker(totalSize)
 
 	if !enableHandshake {
 		conn, err := ln.Accept()

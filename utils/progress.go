@@ -3,6 +3,7 @@ package utils
 import (
 	"fmt"
 	"io"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -10,7 +11,7 @@ import (
 	"github.com/gioco-play/easy-i18n/i18n"
 )
 
-// ProgressTracker tracks upload progress and displays real-time information
+// ProgressTracker tracks upload/download progress and displays real-time information
 type ProgressTracker struct {
 	totalBytes    int64
 	uploadedBytes int64
@@ -19,6 +20,7 @@ type ProgressTracker struct {
 	lastBytes     int64
 	isComplete    bool
 	startOnce     sync.Once
+	mode          string // "upload" or "download"
 }
 
 // NewProgressTracker creates a new progress tracker
@@ -30,7 +32,15 @@ func NewProgressTracker(totalBytes int64) *ProgressTracker {
 		lastUpdate:    time.Time{},
 		lastBytes:     0,
 		isComplete:    false,
+		mode:          "upload", // default to upload
 	}
+}
+
+// NewDownloadProgressTracker creates a new progress tracker for download mode
+func NewDownloadProgressTracker(totalBytes int64) *ProgressTracker {
+	pt := NewProgressTracker(totalBytes)
+	pt.mode = "download"
+	return pt
 }
 
 // Update updates the uploaded bytes and displays progress
@@ -46,26 +56,37 @@ func (pt *ProgressTracker) Update(bytes int64) {
 	pt.displayProgress()
 }
 
-// Complete marks the upload as complete and displays final statistics
+// Complete marks the transfer as complete and displays final statistics
 func (pt *ProgressTracker) Complete() {
 	pt.isComplete = true
-	totalUploaded := atomic.LoadInt64(&pt.uploadedBytes)
+	totalBytes := atomic.LoadInt64(&pt.uploadedBytes)
+
+	// Clear the progress line and add a newline
+	fmt.Print("\r" + strings.Repeat(" ", 100) + "\r\n")
 
 	// Only calculate duration if we actually started (startTime is not zero)
 	if pt.startTime.IsZero() {
 		// No data was transferred
-		fmt.Printf("\n")
-		i18n.Printf("[backup-helper] Upload completed!\n")
-		i18n.Printf("  Total uploaded: %s\n", FormatBytes(totalUploaded))
+		if pt.mode == "download" {
+			i18n.Printf("[backup-helper] Download completed!\n")
+			i18n.Printf("  Total downloaded: %s\n", FormatBytes(totalBytes))
+		} else {
+			i18n.Printf("[backup-helper] Upload completed!\n")
+			i18n.Printf("  Total uploaded: %s\n", FormatBytes(totalBytes))
+		}
 		return
 	}
 
 	duration := time.Since(pt.startTime)
-	avgSpeed := float64(totalUploaded) / duration.Seconds()
+	avgSpeed := float64(totalBytes) / duration.Seconds()
 
-	fmt.Printf("\n")
-	i18n.Printf("[backup-helper] Upload completed!\n")
-	i18n.Printf("  Total uploaded: %s\n", FormatBytes(totalUploaded))
+	if pt.mode == "download" {
+		i18n.Printf("[backup-helper] Download completed!\n")
+		i18n.Printf("  Total downloaded: %s\n", FormatBytes(totalBytes))
+	} else {
+		i18n.Printf("[backup-helper] Upload completed!\n")
+		i18n.Printf("  Total uploaded: %s\n", FormatBytes(totalBytes))
+	}
 	i18n.Printf("  Duration: %s\n", formatDuration(duration))
 	i18n.Printf("  Average speed: %s/s\n", FormatBytes(int64(avgSpeed)))
 }

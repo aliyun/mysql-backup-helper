@@ -136,6 +136,9 @@ func main() {
 
 	// 4. Handle --download mode
 	if doDownload {
+		// Display header
+		outputHeader()
+
 		// Parse stream-port from command line or config
 		if streamPort == 0 && !isFlagPassed("stream-port") && cfg.StreamPort > 0 {
 			streamPort = cfg.StreamPort
@@ -192,7 +195,7 @@ func main() {
 				i18n.Printf("Download error: %v\n", err)
 				os.Exit(1)
 			}
-			i18n.Printf("[backup-helper] Download completed!\n")
+			// Progress tracker will display completion message via closer()
 		} else {
 			// Write to file
 			i18n.Printf("[backup-helper] Receiving backup data and saving to: %s\n", outputPath)
@@ -208,7 +211,8 @@ func main() {
 				i18n.Printf("Download error: %v\n", err)
 				os.Exit(1)
 			}
-			i18n.Printf("[backup-helper] Download completed! Saved to: %s\n", outputPath)
+			// Progress tracker will display completion message via closer()
+			i18n.Printf("[backup-helper] Saved to: %s\n", outputPath)
 		}
 		return
 	}
