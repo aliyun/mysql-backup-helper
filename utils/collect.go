@@ -2,7 +2,6 @@ package utils
 
 import (
 	"database/sql"
-	"fmt"
 
 	"github.com/gioco-play/easy-i18n/i18n"
 )
@@ -17,13 +16,12 @@ func CollectVariableFromMySQLServer(db *sql.DB) map[string]string {
 		"log_bin",
 	}
 	result := make(map[string]string)
-	i18n.Printf("获取参数中...")
-	fmt.Println()
+	i18n.Printf("Get parameter for checking...\n")
 	for _, item := range items {
 		val := GetMySQLVariable(db, item)
-		fmt.Printf("\t%s=%s\n", item, val)
+		i18n.Printf("\t%s=%s\n", item, val)
 		result[item] = val
 	}
-	fmt.Println()
+	i18n.Printf("\n")
 	return result
 }
