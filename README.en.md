@@ -79,7 +79,7 @@ A high-efficiency MySQL physical backup and OSS upload tool. Supports Percona Xt
 | --enable-handshake   | Enable handshake for TCP streaming (default: false, can be set in config) |
 | --stream-key         | Handshake key for TCP streaming (default: empty, can be set in config)    |
 | --existed-backup     | Path to existing xtrabackup backup file to upload or stream (use '-' for stdin) |
-| --estimated-size     | Estimated backup size in bytes (for progress tracking)                  |
+| --estimated-size     | Estimated backup size with units (e.g., '100MB', '1GB') or bytes (for progress tracking) |
 | --io-limit           | IO bandwidth limit with units (e.g., '100MB/s', '1GB/s') or bytes per second. Use -1 for unlimited speed |
 | --version, -v        | Show version information                                               |
 
@@ -190,8 +190,9 @@ cat backup.xb | ./backup-helper --config config.json --existed-backup - --mode=s
 ### 14. Specify estimated size for accurate progress display
 
 ```sh
-./backup-helper --config config.json --backup --mode=oss --estimated-size 1073741824
-# 1073741824 bytes = 1 GB
+./backup-helper --config config.json --backup --mode=oss --estimated-size 1GB
+# Supports units: KB, MB, GB, TB, or use bytes directly
+# Example: --estimated-size 1073741824 or --estimated-size 1GB
 ```
 
 ### 15. Download mode: Receive backup data from TCP stream
@@ -210,8 +211,7 @@ cat backup.xb | ./backup-helper --config config.json --existed-backup - --mode=s
 ./backup-helper --download --stream-port 9999 --io-limit 100MB/s
 
 # Download with progress display (requires estimated size)
-./backup-helper --download --stream-port 9999 --estimated-size 1073741824
-```
+./backup-helper --download --stream-port 9999 --estimated-size 1GB
 
 ---
 
@@ -227,7 +227,7 @@ The tool displays real-time progress information during backup upload/download:
 - **Real-time Progress**: Shows uploaded/downloaded size, total size, percentage, transfer speed, and duration
 - **Final Statistics**: Shows total uploaded/downloaded size, duration, and average speed
 - **Size Calculation**:
-  - If `--estimated-size` is provided, uses that value directly
+  - If `--estimated-size` is provided, uses that value directly (supports units: KB, MB, GB, TB)
   - For live backups, automatically calculates MySQL datadir size
   - For existing backup files, automatically reads file size
   - When reading from stdin, size is unknown, only displays upload amount and speed

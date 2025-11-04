@@ -77,3 +77,66 @@ func ParseRateLimit(rateStr string) (int64, error) {
 
 	return int64(value * multiplier), nil
 }
+
+// ParseSize parses a size string with units (e.g., "100MB", "1GB", "500KB")
+// Returns bytes
+// Supported units: B, KB, MB, GB, TB (case insensitive)
+func ParseSize(sizeStr string) (int64, error) {
+	if sizeStr == "" || sizeStr == "0" {
+		return 0, nil
+	}
+
+	sizeStr = strings.TrimSpace(sizeStr)
+	sizeStr = strings.ToUpper(sizeStr)
+
+	// Find where the number ends
+	var numEnd int
+	for i, r := range sizeStr {
+		if !unicode.IsDigit(r) && r != '.' {
+			numEnd = i
+			break
+		}
+		numEnd = i + 1
+	}
+
+	if numEnd == 0 {
+		return 0, fmt.Errorf("invalid size format: %s", sizeStr)
+	}
+
+	// Parse number
+	numStr := sizeStr[:numEnd]
+	value, err := strconv.ParseFloat(numStr, 64)
+	if err != nil {
+		return 0, fmt.Errorf("invalid number in size: %s", numStr)
+	}
+
+	if value <= 0 {
+		return 0, nil
+	}
+
+	// Parse unit
+	unitStr := strings.TrimSpace(sizeStr[numEnd:])
+	if unitStr == "" {
+		// Default to bytes if no unit specified
+		return int64(value), nil
+	}
+
+	// Map units to multipliers (base 1024)
+	var multiplier float64
+	switch unitStr {
+	case "B", "BYTE", "BYTES":
+		multiplier = 1
+	case "KB", "K":
+		multiplier = 1024
+	case "MB", "M":
+		multiplier = 1024 * 1024
+	case "GB", "G":
+		multiplier = 1024 * 1024 * 1024
+	case "TB", "T":
+		multiplier = 1024 * 1024 * 1024 * 1024
+	default:
+		return 0, fmt.Errorf("unsupported unit: %s (supported: B, KB, MB, GB, TB)", unitStr)
+	}
+
+	return int64(value * multiplier), nil
+}

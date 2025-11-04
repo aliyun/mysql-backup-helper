@@ -79,7 +79,7 @@
 | --enable-handshake   | TCP流推送启用握手认证（默认false，可在配置文件设置）         |
 | --stream-key         | TCP流推送握手密钥（默认空，可在配置文件设置）                |
 | --existed-backup     | 已存在的xtrabackup备份文件路径，用于上传或流式传输（使用'-'表示从stdin读取） |
-| --estimated-size     | 预估备份大小（字节），用于进度跟踪                                  |
+| --estimated-size     | 预估备份大小，支持单位（如 '100MB', '1GB'）或字节（用于进度跟踪） |
 | --io-limit           | IO 带宽限制，支持单位（如 '100MB/s', '1GB/s'）或字节/秒，使用 -1 表示不限速 |
 | --version, -v        | 显示版本信息                                                      |
 
@@ -191,8 +191,9 @@ cat backup.xb | ./backup-helper --config config.json --existed-backup - --mode=s
 ### 14. 指定预估大小以显示准确的进度
 
 ```sh
-./backup-helper --config config.json --backup --mode=oss --estimated-size 1073741824
-# 1073741824 字节 = 1 GB
+./backup-helper --config config.json --backup --mode=oss --estimated-size 1GB
+# 支持单位：KB, MB, GB, TB，也可以直接使用字节
+# 例如：--estimated-size 1073741824 或 --estimated-size 1GB
 ```
 
 ### 15. 下载模式：从 TCP 流接收备份数据
@@ -211,7 +212,7 @@ cat backup.xb | ./backup-helper --config config.json --existed-backup - --mode=s
 ./backup-helper --download --stream-port 9999 --io-limit 100MB/s
 
 # 带进度显示（需要提供预估大小）
-./backup-helper --download --stream-port 9999 --estimated-size 1073741824
+./backup-helper --download --stream-port 9999 --estimated-size 1GB
 ```
 
 ---
@@ -228,7 +229,7 @@ cat backup.xb | ./backup-helper --config config.json --existed-backup - --mode=s
 - **实时进度**：显示已上传/已下载大小、总大小、百分比、传输速度和持续时间
 - **最终统计**：显示总上传/总下载大小、持续时间、平均速度
 - **大小计算**：
-  - 如果提供了 `--estimated-size`，直接使用该值
+  - 如果提供了 `--estimated-size`，直接使用该值（支持单位：KB, MB, GB, TB）
   - 对于实时备份，自动计算 MySQL datadir 大小
   - 对于已有备份文件，自动读取文件大小
   - 从 stdin 读取时，无法获取大小，只显示上传量和速度

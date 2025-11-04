@@ -33,6 +33,7 @@ func main() {
 	var existedBackup string
 	var downloadOutput string
 	var showVersion bool
+	var estimatedSizeStr string
 	var estimatedSize int64
 	var ioLimitStr string
 	var ioLimit int64
@@ -40,7 +41,7 @@ func main() {
 	flag.BoolVar(&doBackup, "backup", false, "Run xtrabackup and upload to OSS")
 	flag.BoolVar(&doDownload, "download", false, "Download backup from TCP stream (listen on port)")
 	flag.StringVar(&downloadOutput, "output", "", "Output file path for download mode (use '-' for stdout, default: backup_YYYYMMDDHHMMSS.xb)")
-	flag.Int64Var(&estimatedSize, "estimated-size", 0, "Estimated backup size in bytes (for progress tracking)")
+	flag.StringVar(&estimatedSizeStr, "estimated-size", "", "Estimated backup size with unit (e.g., '100MB', '1GB', '500KB') or bytes (for progress tracking)")
 	flag.StringVar(&ioLimitStr, "io-limit", "", "IO bandwidth limit with unit (e.g., '100MB/s', '1GB/s', '500KB/s') or bytes per second. Use -1 for unlimited speed")
 	flag.StringVar(&existedBackup, "existed-backup", "", "Path to existing xtrabackup backup file to upload (use '-' for stdin)")
 	flag.BoolVar(&showVersion, "version", false, "Show version information")
@@ -110,7 +111,16 @@ func main() {
 	if existedBackup == "" && cfg.ExistedBackup != "" {
 		existedBackup = cfg.ExistedBackup
 	}
-	if estimatedSize == 0 && cfg.EstimatedSize > 0 {
+
+	// Parse estimatedSize from command line or config
+	if estimatedSizeStr != "" {
+		parsedSize, err := utils.ParseSize(estimatedSizeStr)
+		if err != nil {
+			i18n.Printf("Error parsing --estimated-size '%s': %v\n", estimatedSizeStr, err)
+			os.Exit(1)
+		}
+		estimatedSize = parsedSize
+	} else if estimatedSize == 0 && cfg.EstimatedSize > 0 {
 		estimatedSize = cfg.EstimatedSize
 	}
 
