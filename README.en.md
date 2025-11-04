@@ -174,15 +174,15 @@ cat backup.xb | ./backup-helper --config config.json --existed-backup - --mode=s
 ### 12. Auto-detect bandwidth and rate-limit upload
 
 ```sh
-./backup-helper --config config.json --backup --mode=oss --auto-limit-rate
-# Automatically detects disk IO bandwidth and limits to 80% to protect system performance
+./backup-helper --config config.json --backup --mode=oss --io-limit 100MB/s
+# Supports units: KB/s, MB/s, GB/s, TB/s, or use bytes per second directly
 ```
 
-### 13. Manually specify upload rate limit (e.g., limit to 100 MB/s)
+### 13. Disable rate limiting (unlimited upload speed)
 
 ```sh
-./backup-helper --config config.json --backup --mode=oss --io-limit 104857600
-# 104857600 bytes/sec = 100 MB/s
+./backup-helper --config config.json --backup --mode=oss --io-limit -1
+# Use -1 to completely disable rate limiting for maximum upload speed
 ```
 
 ### 14. Specify estimated size for accurate progress display
