@@ -215,6 +215,22 @@ cat backup.xb | ./backup-helper --config config.json --existed-backup - --mode=s
 # Download with progress display (requires estimated size)
 ./backup-helper --download --stream-port 9999 --estimated-size 1GB
 
+# Stream extract to data directory (recommended)
+./backup-helper --download --stream-port 9999 --extract-to /data/mysql
+
+# Extract compressed backup (zstd compression)
+./backup-helper --download --stream-port 9999 --extract-to /data/mysql --extract-compress-type zstd
+
+# Extract compressed backup (qpress compression)
+./backup-helper --download --stream-port 9999 --extract-to /data/mysql --extract-compress-type qp
+```
+
+**Stream Extraction Notes**:
+- Use `--extract-to` to directly extract received backup data to a directory using `xbstream`
+- If the backup is compressed, specify `--extract-compress-type` (supports `zstd` and `qp`/`qpress`)
+- Extraction is stream-based, no need to save file first, saving disk space and time
+- After extraction, use `xtrabackup --prepare` and `xtrabackup --copy-back` to complete restoration
+
 ---
 
 ## Logging & Object Naming
