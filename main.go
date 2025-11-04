@@ -164,6 +164,9 @@ func main() {
 
 		// Determine output file path
 		outputPath := downloadOutput
+		if outputPath == "" && cfg.DownloadOutput != "" {
+			outputPath = cfg.DownloadOutput
+		}
 		if outputPath == "" {
 			// Default: backup_YYYYMMDDHHMMSS.xb
 			timestamp := time.Now().Format("20060102150405")
