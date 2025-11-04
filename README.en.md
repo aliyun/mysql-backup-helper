@@ -171,7 +171,7 @@ cat backup.xb | ./backup-helper --config config.json --existed-backup - --mode=o
 cat backup.xb | ./backup-helper --config config.json --existed-backup - --mode=stream --stream-port=9999
 ```
 
-### 12. Auto-detect bandwidth and rate-limit upload
+### 12. Manually specify upload rate limit (e.g., limit to 100 MB/s)
 
 ```sh
 ./backup-helper --config config.json --backup --mode=oss --io-limit 100MB/s
