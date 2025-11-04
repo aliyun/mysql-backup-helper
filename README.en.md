@@ -34,7 +34,7 @@ A high-efficiency MySQL physical backup and OSS upload tool. Supports Percona Xt
   "objectName": "backup/your-backup",   // Only prefix needed, timestamp and suffix are auto-appended
   "size": 104857600,
   "buffer": 10,
-  "traffic": 83886080,
+  "traffic": 209715200,
   "mysqlHost": "127.0.0.1",
   "mysqlPort": 3306,
   "mysqlUser": "root",
@@ -47,8 +47,7 @@ A high-efficiency MySQL physical backup and OSS upload tool. Supports Percona Xt
   "existedBackup": "",
   "logDir": "/var/log/mysql-backup-helper",
   "estimatedSize": 0,
-  "ioLimit": 0,
-  "autoLimitRate": false
+  "ioLimit": 0
 }
 ```
 
@@ -79,8 +78,7 @@ A high-efficiency MySQL physical backup and OSS upload tool. Supports Percona Xt
 | --stream-key         | Handshake key for TCP streaming (default: empty, can be set in config)    |
 | --existed-backup     | Path to existing xtrabackup backup file to upload or stream (use '-' for stdin) |
 | --estimated-size     | Estimated backup size in bytes (for progress tracking)                  |
-| --io-limit           | IO bandwidth limit in bytes per second                                   |
-| --auto-limit-rate    | Automatically detect and limit IO bandwidth (80% of detected peak)       |
+| --io-limit           | IO bandwidth limit with units (e.g., '100MB/s', '1GB/s') or bytes per second. Use -1 for unlimited speed |
 | --version, -v        | Show version information                                               |
 
 ---
@@ -213,36 +211,25 @@ The tool displays real-time progress information during backup upload:
   - For existing backup files, automatically reads file size
   - When reading from stdin, size is unknown, only displays upload amount and speed
 
-## Bandwidth Detection & Rate Limiting
+## Rate Limiting
 
-- **Auto Rate Limiting with Real-time Monitoring**: Use `--auto-limit-rate` to enable smart rate limiting
-  - **Safe Design**: No disk stress testing to avoid impacting production environments
-  - **Real-time IO Monitoring**: Monitors system IO utilization every 2 seconds during transfer
-  - **Dynamic Adjustment**: Automatically adjusts transfer speed based on IO usage
-    - IO utilization > 80%: Automatically reduces rate limit by 10%
-    - IO utilization < 56%: Gradually restores rate limit by 10%
-    - Minimum protection: Never lower than 10% of original limit
-  - **Default Limit**: 240 MB/s (80% of 300 MB/s)
-  
-- **Manual Rate Limit**: Use `--io-limit` to manually specify upload bandwidth limit (bytes/sec)
+- **Default Rate Limit**: If `--io-limit` is not specified, defaults to 200 MB/s
+- **Manual Rate Limit**: Use `--io-limit` to specify upload bandwidth limit
+  - Supports units: `KB/s`, `MB/s`, `GB/s`, `TB/s` (e.g., `100MB/s`, `1GB/s`)
+  - Can also use bytes per second directly (e.g., `104857600` for 100 MB/s)
+  - Use `-1` to completely disable rate limiting (unlimited upload speed)
+- **Config File**: Can set `ioLimit` field in config file, or use `traffic` field (in bytes per second)
 
 Example output:
 ```
-[backup-helper] Auto rate limiting enabled (using default safe limit)
-  Note: Real-time IO monitoring will be active during transfer
-  Default limit: 300 MB/s
-  Use --io-limit to manually set bandwidth limit if needed
-[backup-helper] Using safe default limit: 240.0 MB/s (80% of 300 MB/s)
-[backup-helper] Real-time IO monitoring active (threshold: 80%, auto-adjusting rate limit)
+[backup-helper] IO rate limit set to: 100.0 MB/s
 
-Progress: 1.1 GB / 1.5 GB (73.3%) - 135.2 MB/s - Duration: 8.5s
-[backup-helper] IO utilization high (85.2%), reducing rate limit to 216.0 MB/s
-Progress: 1.3 GB / 1.5 GB (86.7%) - 120.5 MB/s - Duration: 11.2s
-[backup-helper] IO utilization low (48.3%), increasing rate limit to 237.6 MB/s
+Progress: 1.1 GB / 1.5 GB (73.3%) - 98.5 MB/s - Duration: 11.4s
+Progress: 1.3 GB / 1.5 GB (86.7%) - 99.2 MB/s - Duration: 13.1s
 [backup-helper] Upload completed!
   Total uploaded: 1.5 GB
-  Duration: 12s
-  Average speed: 125.3 MB/s
+  Duration: 15s
+  Average speed: 102.4 MB/s
 ```
 
 ---

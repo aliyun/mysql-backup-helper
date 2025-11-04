@@ -52,7 +52,7 @@ func (c *Config) SetDefaults() {
 		c.Buffer = 10
 	}
 	if c.Traffic == 0 {
-		c.Traffic = 83886080 // 10MB
+		c.Traffic = 209715200 // 200MB/s
 	}
 	// Note: StreamPort 0 means auto-find available port, don't set default to 9999
 	if c.MysqlPort == 0 {

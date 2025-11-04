@@ -8,11 +8,15 @@ import (
 )
 
 // ParseRateLimit parses a rate limit string with units (e.g., "100MB/s", "1GB/s", "500KB/s")
-// Returns bytes per second
+// Returns bytes per second, or -1 for unlimited speed
 // Supported units: B/s, KB/s, MB/s, GB/s, TB/s (case insensitive)
+// Special value: -1 means unlimited speed
 func ParseRateLimit(rateStr string) (int64, error) {
 	if rateStr == "" || rateStr == "0" {
 		return 0, nil
+	}
+	if rateStr == "-1" {
+		return -1, nil
 	}
 
 	rateStr = strings.TrimSpace(rateStr)

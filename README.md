@@ -34,7 +34,7 @@
   "objectName": "backup/your-backup",   // 只需前缀，实际文件名会自动加时间戳和后缀
   "size": 104857600,
   "buffer": 10,
-  "traffic": 83886080,
+  "traffic": 209715200,
   "mysqlHost": "127.0.0.1",
   "mysqlPort": 3306,
   "mysqlUser": "root",
@@ -47,8 +47,7 @@
   "existedBackup": "",
   "logDir": "/var/log/mysql-backup-helper",
   "estimatedSize": 0,
-  "ioLimit": 0,
-  "autoLimitRate": false
+  "ioLimit": 0
 }
 ```
 
@@ -79,8 +78,7 @@
 | --stream-key         | TCP流推送握手密钥（默认空，可在配置文件设置）                |
 | --existed-backup     | 已存在的xtrabackup备份文件路径，用于上传或流式传输（使用'-'表示从stdin读取） |
 | --estimated-size     | 预估备份大小（字节），用于进度跟踪                                  |
-| --io-limit           | IO 带宽限制（字节/秒），用于限速上传                                |
-| --auto-limit-rate    | 自动检测并限制 IO 带宽（检测峰值带宽的 80%）                           |
+| --io-limit           | IO 带宽限制，支持单位（如 '100MB/s', '1GB/s'）或字节/秒，使用 -1 表示不限速 |
 | --version, -v        | 显示版本信息                                                      |
 
 ---
@@ -174,18 +172,18 @@ cat backup.xb | ./backup-helper --config config.json --existed-backup - --mode=o
 cat backup.xb | ./backup-helper --config config.json --existed-backup - --mode=stream --stream-port=9999
 ```
 
-### 12. 自动检测带宽并限速上传
+### 12. 手动指定上传限速（如限制到 100 MB/s）
 
 ```sh
-./backup-helper --config config.json --backup --mode=oss --auto-limit-rate
-# 程序会自动检测磁盘 IO 带宽，并限制到 80% 以保护系统性能
+./backup-helper --config config.json --backup --mode=oss --io-limit 100MB/s
+# 支持单位：KB/s, MB/s, GB/s, TB/s，也可以直接使用字节/秒
 ```
 
-### 13. 手动指定上传限速（如限制到 100 MB/s）
+### 13. 禁用限速（不限速上传）
 
 ```sh
-./backup-helper --config config.json --backup --mode=oss --io-limit 104857600
-# 104857600 字节/秒 = 100 MB/s
+./backup-helper --config config.json --backup --mode=oss --io-limit -1
+# 使用 -1 表示完全禁用限速，以最大速度上传
 ```
 
 ### 14. 指定预估大小以显示准确的进度
@@ -214,36 +212,25 @@ cat backup.xb | ./backup-helper --config config.json --existed-backup - --mode=s
   - 对于已有备份文件，自动读取文件大小
   - 从 stdin 读取时，无法获取大小，只显示上传量和速度
 
-## 带宽检测与限速
+## 带宽限速
 
-- **自动限速与实时监控**：使用 `--auto-limit-rate` 启用智能限速
-  - **安全设计**：不再进行磁盘压测，避免影响生产环境
-  - **实时 IO 监控**：传输过程中每 2 秒监控一次系统 IO 使用率
-  - **动态调整**：根据 IO 使用情况自动调整传输速度
-    - IO 使用率 > 80%：自动降低限速 10%
-    - IO 使用率 < 56%：逐步恢复限速 10%
-    - 最低保护：不低于原始限速的 10%
-  - **默认限速**：240 MB/s（300 MB/s 的 80%）
-  
-- **手动限速**：使用 `--io-limit` 手动指定上传带宽限制（字节/秒）
+- **默认限速**：如果不指定 `--io-limit`，默认使用 200 MB/s 的限速
+- **手动限速**：使用 `--io-limit` 指定上传带宽限制
+  - 支持单位：`KB/s`, `MB/s`, `GB/s`, `TB/s`（如 `100MB/s`, `1GB/s`）
+  - 也可以直接使用字节/秒（如 `104857600` 表示 100 MB/s）
+  - 使用 `-1` 表示完全禁用限速（不限速上传）
+- **配置文件**：可以在配置文件中设置 `ioLimit` 字段，或使用 `traffic` 字段（单位：字节/秒）
 
 示例输出：
 ```
-[backup-helper] Auto rate limiting enabled (using default safe limit)
-  Note: Real-time IO monitoring will be active during transfer
-  Default limit: 300 MB/s
-  Use --io-limit to manually set bandwidth limit if needed
-[backup-helper] Using safe default limit: 240.0 MB/s (80% of 300 MB/s)
-[backup-helper] Real-time IO monitoring active (threshold: 80%, auto-adjusting rate limit)
+[backup-helper] IO rate limit set to: 100.0 MB/s
 
-Progress: 1.1 GB / 1.5 GB (73.3%) - 135.2 MB/s - Duration: 8.5s
-[backup-helper] IO utilization high (85.2%), reducing rate limit to 216.0 MB/s
-Progress: 1.3 GB / 1.5 GB (86.7%) - 120.5 MB/s - Duration: 11.2s
-[backup-helper] IO utilization low (48.3%), increasing rate limit to 237.6 MB/s
+Progress: 1.1 GB / 1.5 GB (73.3%) - 98.5 MB/s - Duration: 11.4s
+Progress: 1.3 GB / 1.5 GB (86.7%) - 99.2 MB/s - Duration: 13.1s
 [backup-helper] Upload completed!
   Total uploaded: 1.5 GB
-  Duration: 12s
-  Average speed: 125.3 MB/s
+  Duration: 15s
+  Average speed: 102.4 MB/s
 ```
 
 ---

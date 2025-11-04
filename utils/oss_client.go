@@ -3,10 +3,8 @@ package utils
 import (
 	"bufio"
 	"bytes"
-	"context"
 	"io"
 	"sync"
-	"time"
 
 	"github.com/aliyun/aliyun-oss-go-sdk/oss"
 	"github.com/gioco-play/easy-i18n/i18n"
@@ -35,68 +33,6 @@ func UploadReaderToOSS(cfg *Config, objectName string, reader io.Reader, totalSi
 	// Create progress tracker
 	tracker := NewProgressTracker(totalSize)
 	defer tracker.Complete()
-
-	// Start IO monitoring if auto-limit-rate is enabled
-	var ioMonitor *IOMonitor
-	var monitorCtx context.Context
-	var cancelMonitor context.CancelFunc
-	if cfg.AutoLimitRate {
-		monitorCtx, cancelMonitor = context.WithCancel(context.Background())
-		defer cancelMonitor()
-
-		// Create IO monitor with 80% threshold and dynamic rate adjustment
-		ioMonitor = NewIOMonitor(80.0, cfg.Traffic, func(stats *IOStats) {
-			// This callback is called when high IO is detected, but rate is already adjusted
-			// Just log the stats for reference
-			i18n.Printf("  Current IO stats - Read: %.1f MB/s, Write: %.1f MB/s\n",
-				stats.ReadBW, stats.WriteBW)
-		})
-		ioMonitor.Start(monitorCtx, 2*time.Second)
-		defer ioMonitor.Stop()
-
-		i18n.Printf("[backup-helper] Real-time IO monitoring active (threshold: 80%%, auto-adjusting rate limit)\n")
-	}
-
-	// Start goroutine to update IO info in progress tracker
-	updateCtx, cancelUpdate := context.WithCancel(context.Background())
-	defer cancelUpdate()
-	go func() {
-		ticker := time.NewTicker(2 * time.Second)
-		defer ticker.Stop()
-		for {
-			select {
-			case <-updateCtx.Done():
-				return
-			case <-ticker.C:
-				var ioUtil float64
-				var currentLimit int64
-
-				// Get IO stats if available
-				if ioMonitor != nil {
-					stats := ioMonitor.GetStats()
-					if stats != nil {
-						ioUtil = stats.UtilPercent
-					}
-					currentLimit = ioMonitor.GetCurrentLimit()
-				} else if cfg.Traffic > 0 {
-					// Manual limit, get IO stats directly
-					stats, err := GetCurrentIOStats()
-					if err == nil {
-						ioUtil = stats.UtilPercent
-					}
-					currentLimit = cfg.Traffic
-				} else {
-					// Try to get IO stats anyway
-					stats, err := GetCurrentIOStats()
-					if err == nil {
-						ioUtil = stats.UtilPercent
-					}
-				}
-
-				tracker.SetIOInfo(ioUtil, currentLimit)
-			}
-		}
-	}()
 
 	client, err := oss.New(cfg.Endpoint, cfg.AccessKeyId, cfg.AccessKeySecret)
 	if err != nil {
@@ -129,14 +65,7 @@ func UploadReaderToOSS(cfg *Config, objectName string, reader io.Reader, totalSi
 		if n > 0 {
 			data := p[:n]
 			waitSender.Add(1)
-
-			// Use dynamic rate limit if IO monitoring is active
-			trafficLimit := cfg.Traffic
-			if ioMonitor != nil {
-				trafficLimit = ioMonitor.GetCurrentLimit()
-			}
-
-			part, err := uploadPart(bucket, imur, data, index, trafficLimit)
+			part, err := uploadPart(bucket, imur, data, index, cfg.Traffic)
 			if err != nil {
 				bucket.AbortMultipartUpload(imur)
 				return err
@@ -164,11 +93,21 @@ func UploadReaderToOSS(cfg *Config, objectName string, reader io.Reader, totalSi
 
 func uploadPart(bucket *oss.Bucket, imur oss.InitiateMultipartUploadResult, data []byte, index int, traffic int64) (oss.UploadPart, error) {
 	reader := bytes.NewReader(data)
-	part, err := bucket.UploadPart(imur, reader, int64(len(data)), index, oss.Progress(&OssProgressListener{}), oss.TrafficLimitHeader(traffic))
-	if err != nil {
-		return oss.UploadPart{}, err
+	// If traffic is 0, don't apply rate limiting (unlimited)
+	if traffic > 0 {
+		part, err := bucket.UploadPart(imur, reader, int64(len(data)), index, oss.Progress(&OssProgressListener{}), oss.TrafficLimitHeader(traffic))
+		if err != nil {
+			return oss.UploadPart{}, err
+		}
+		return part, nil
+	} else {
+		// No rate limiting
+		part, err := bucket.UploadPart(imur, reader, int64(len(data)), index, oss.Progress(&OssProgressListener{}))
+		if err != nil {
+			return oss.UploadPart{}, err
+		}
+		return part, nil
 	}
-	return part, nil
 }
 
 // DeleteOSSObject deletes the specified OSS object, objectName is passed by the caller

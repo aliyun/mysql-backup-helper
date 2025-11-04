@@ -3,7 +3,6 @@ package utils
 import (
 	"fmt"
 	"io"
-	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -20,11 +19,6 @@ type ProgressTracker struct {
 	lastBytes     int64
 	isComplete    bool
 	startOnce     sync.Once
-
-	// IO monitoring fields
-	ioUtilPercent float64      // IO utilization percentage
-	currentLimit  int64        // Current rate limit in bytes/s
-	mu            sync.RWMutex // Protect IO fields
 }
 
 // NewProgressTracker creates a new progress tracker
@@ -96,57 +90,23 @@ func (pt *ProgressTracker) displayProgress() {
 	bytesDiff := uploaded - pt.lastBytes
 	speed := float64(bytesDiff) / duration.Seconds()
 
-	// Get IO info
-	pt.mu.RLock()
-	ioUtil := pt.ioUtilPercent
-	rateLimit := pt.currentLimit
-	pt.mu.RUnlock()
-
 	// Display progress
 	var progressLine string
 	if pt.totalBytes > 0 {
 		percentage := float64(uploaded) * 100.0 / float64(pt.totalBytes)
-
-		// Build info string with IO and rate limit
-		infoParts := []string{
-			fmt.Sprintf("%s/s", FormatBytes(int64(speed))),
-			fmt.Sprintf("Duration: %s", formatDuration(now.Sub(pt.startTime))),
-		}
-
-		if ioUtil > 0 {
-			infoParts = append(infoParts, fmt.Sprintf("IO: %.1f%%", ioUtil))
-		}
-
-		if rateLimit > 0 {
-			infoParts = append(infoParts, fmt.Sprintf("Limit: %s/s", FormatBytes(rateLimit)))
-		}
-
-		infoStr := strings.Join(infoParts, " - ")
-		progressLine = fmt.Sprintf("\rProgress: %s / %s (%.1f%%) - %s",
+		progressLine = fmt.Sprintf("\rProgress: %s / %s (%.1f%%) - %s/s - Duration: %s",
 			FormatBytes(uploaded),
 			FormatBytes(pt.totalBytes),
 			percentage,
-			infoStr,
+			FormatBytes(int64(speed)),
+			formatDuration(now.Sub(pt.startTime)),
 		)
 	} else {
 		// Unknown total size
-		infoParts := []string{
-			fmt.Sprintf("%s/s", FormatBytes(int64(speed))),
-			fmt.Sprintf("Duration: %s", formatDuration(now.Sub(pt.startTime))),
-		}
-
-		if ioUtil > 0 {
-			infoParts = append(infoParts, fmt.Sprintf("IO: %.1f%%", ioUtil))
-		}
-
-		if rateLimit > 0 {
-			infoParts = append(infoParts, fmt.Sprintf("Limit: %s/s", FormatBytes(rateLimit)))
-		}
-
-		infoStr := strings.Join(infoParts, " - ")
-		progressLine = fmt.Sprintf("\rProgress: %s - %s",
+		progressLine = fmt.Sprintf("\rProgress: %s - %s/s - Duration: %s",
 			FormatBytes(uploaded),
-			infoStr,
+			FormatBytes(int64(speed)),
+			formatDuration(now.Sub(pt.startTime)),
 		)
 	}
 
@@ -154,14 +114,6 @@ func (pt *ProgressTracker) displayProgress() {
 
 	pt.lastUpdate = now
 	pt.lastBytes = uploaded
-}
-
-// SetIOInfo updates IO utilization and current rate limit for display
-func (pt *ProgressTracker) SetIOInfo(ioUtilPercent float64, currentLimit int64) {
-	pt.mu.Lock()
-	pt.ioUtilPercent = ioUtilPercent
-	pt.currentLimit = currentLimit
-	pt.mu.Unlock()
 }
 
 // ProgressReader wraps an io.Reader to track progress
@@ -283,7 +235,6 @@ func (rlw *RateLimitedWriter) Write(p []byte) (n int, err error) {
 			time.Sleep(waitTime)
 			rlw.mu.Lock()
 			now = time.Now()
-			elapsed = now.Sub(rlw.lastWrite).Seconds()
 			rlw.lastWrite = now
 			rlw.bytesWritten = 0
 			available = rateLimit

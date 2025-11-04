@@ -7,7 +7,7 @@
   "objectName": "backup/mysql_backup",
   "size": 104857600,
   "buffer": 10,
-  "traffic": 83886080,
+  "traffic": 209715200,
   "mysqlHost": "127.0.0.1",
   "mysqlPort": 3306,
   "mysqlUser": "root",
@@ -21,6 +21,5 @@
   "streamKey": "your-secret-key",
   "existedBackup": "your-existed-backup-file-path",
   "estimatedSize": 0,
-  "ioLimit": 0,
-  "autoLimitRate": false
+  "ioLimit": 0
 }
