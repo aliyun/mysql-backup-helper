@@ -226,6 +226,12 @@ cat backup.xb | ./backup-helper --config config.json --existed-backup - --mode=s
 ./backup-helper --download --stream-port 9999 --extract-to /data/mysql --extract-compress-type qp
 ```
 
+**流式解包说明**：
+- 使用 `--extract-to` 参数可以直接将接收到的备份数据通过 `xbstream` 解包到指定目录
+- 如果备份是压缩的，需要指定 `--extract-compress-type`（支持 `zstd` 和 `qp`/`qpress`）
+- 解包过程是流式的，不需要先保存文件再解包，节省磁盘空间和时间
+- 解包完成后，可以使用 `xtrabackup --prepare` 和 `xtrabackup --copy-back` 完成恢复
+
 ---
 
 ## 日志与对象命名
