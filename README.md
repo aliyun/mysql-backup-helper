@@ -68,6 +68,8 @@
 | --user              | MySQL 用户名（优先于配置文件）                               |
 | --password          | MySQL 密码（优先于配置文件，未指定则交互输入）               |
 | --backup            | 启动备份流程（否则只做参数检查）                             |
+| --download          | 下载模式：从 TCP 流接收备份数据并保存                       |
+| --output            | 下载模式输出文件路径（使用 '-' 表示输出到 stdout，默认：backup_YYYYMMDDHHMMSS.xb） |
 | --mode              | 备份模式：`oss`（上传到 OSS）或 `stream`（推送到 TCP 端口）  |
 | --stream-port       | 流式推送时监听的本地端口（如 9999，设为 0 则自动查找空闲端口） |
 | --compress          | 启用压缩                                                  |
@@ -193,6 +195,25 @@ cat backup.xb | ./backup-helper --config config.json --existed-backup - --mode=s
 # 1073741824 字节 = 1 GB
 ```
 
+### 15. 下载模式：从 TCP 流接收备份数据
+
+```sh
+# 下载到默认文件（backup_YYYYMMDDHHMMSS.xb）
+./backup-helper --download --stream-port 9999
+
+# 下载到指定文件
+./backup-helper --download --stream-port 9999 --output my_backup.xb
+
+# 流式输出到 stdout（可用于管道压缩）
+./backup-helper --download --stream-port 9999 --output - | zstd -d > backup.xb
+
+# 带限速下载
+./backup-helper --download --stream-port 9999 --io-limit 100MB/s
+
+# 带进度显示（需要提供预估大小）
+./backup-helper --download --stream-port 9999 --estimated-size 1073741824
+```
+
 ---
 
 ## 日志与对象命名
@@ -204,8 +225,8 @@ cat backup.xb | ./backup-helper --config config.json --existed-backup - --mode=s
 
 工具会在备份上传过程中实时显示进度信息：
 
-- **实时进度**：显示已上传大小、总大小、百分比、传输速度和持续时间
-- **最终统计**：显示总上传大小、持续时间、平均速度
+- **实时进度**：显示已上传/已下载大小、总大小、百分比、传输速度和持续时间
+- **最终统计**：显示总上传/总下载大小、持续时间、平均速度
 - **大小计算**：
   - 如果提供了 `--estimated-size`，直接使用该值
   - 对于实时备份，自动计算 MySQL datadir 大小
@@ -215,7 +236,7 @@ cat backup.xb | ./backup-helper --config config.json --existed-backup - --mode=s
 ## 带宽限速
 
 - **默认限速**：如果不指定 `--io-limit`，默认使用 200 MB/s 的限速
-- **手动限速**：使用 `--io-limit` 指定上传带宽限制
+- **手动限速**：使用 `--io-limit` 指定上传/下载带宽限制
   - 支持单位：`KB/s`, `MB/s`, `GB/s`, `TB/s`（如 `100MB/s`, `1GB/s`）
   - 也可以直接使用字节/秒（如 `104857600` 表示 100 MB/s）
   - 使用 `-1` 表示完全禁用限速（不限速上传）

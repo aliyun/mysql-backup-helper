@@ -68,6 +68,8 @@ A high-efficiency MySQL physical backup and OSS upload tool. Supports Percona Xt
 | --user             | MySQL username (overrides config)                                |
 | --password         | MySQL password (overrides config, prompt if omitted)             |
 | --backup           | Run backup (otherwise only checks parameters)                    |
+| --download         | Download mode: receive backup data from TCP stream and save      |
+| --output           | Output file path for download mode (use '-' for stdout, default: backup_YYYYMMDDHHMMSS.xb) |
 | --mode             | Backup mode: `oss` (upload to OSS) or `stream` (push to TCP)     |
 | --stream-port      | Local port for streaming mode (e.g. 9999, 0 = auto-find available port) |
 | --compress         | Enable compression                                               |
@@ -192,6 +194,25 @@ cat backup.xb | ./backup-helper --config config.json --existed-backup - --mode=s
 # 1073741824 bytes = 1 GB
 ```
 
+### 15. Download mode: Receive backup data from TCP stream
+
+```sh
+# Download to default file (backup_YYYYMMDDHHMMSS.xb)
+./backup-helper --download --stream-port 9999
+
+# Download to specified file
+./backup-helper --download --stream-port 9999 --output my_backup.xb
+
+# Stream to stdout (can be used with pipes for compression)
+./backup-helper --download --stream-port 9999 --output - | zstd -d > backup.xb
+
+# Download with rate limiting
+./backup-helper --download --stream-port 9999 --io-limit 100MB/s
+
+# Download with progress display (requires estimated size)
+./backup-helper --download --stream-port 9999 --estimated-size 1073741824
+```
+
 ---
 
 ## Logging & Object Naming
@@ -201,10 +222,10 @@ cat backup.xb | ./backup-helper --config config.json --existed-backup - --mode=s
 
 ## Progress Tracking
 
-The tool displays real-time progress information during backup upload:
+The tool displays real-time progress information during backup upload/download:
 
-- **Real-time Progress**: Shows uploaded size, total size, percentage, transfer speed, and duration
-- **Final Statistics**: Shows total uploaded size, duration, and average speed
+- **Real-time Progress**: Shows uploaded/downloaded size, total size, percentage, transfer speed, and duration
+- **Final Statistics**: Shows total uploaded/downloaded size, duration, and average speed
 - **Size Calculation**:
   - If `--estimated-size` is provided, uses that value directly
   - For live backups, automatically calculates MySQL datadir size
@@ -214,7 +235,7 @@ The tool displays real-time progress information during backup upload:
 ## Rate Limiting
 
 - **Default Rate Limit**: If `--io-limit` is not specified, defaults to 200 MB/s
-- **Manual Rate Limit**: Use `--io-limit` to specify upload bandwidth limit
+- **Manual Rate Limit**: Use `--io-limit` to specify upload/download bandwidth limit
   - Supports units: `KB/s`, `MB/s`, `GB/s`, `TB/s` (e.g., `100MB/s`, `1GB/s`)
   - Can also use bytes per second directly (e.g., `104857600` for 100 MB/s)
   - Use `-1` to completely disable rate limiting (unlimited upload speed)
