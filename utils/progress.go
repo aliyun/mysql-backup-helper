@@ -14,15 +14,15 @@ import (
 
 // ProgressTracker tracks upload/download progress and displays real-time information
 type ProgressTracker struct {
-	totalBytes    int64
-	uploadedBytes int64
-	startTime     time.Time
-	lastUpdate    time.Time
-	lastBytes     int64
-	isComplete    bool
-	startOnce     sync.Once
-	mode          string // "upload" or "download"
-	outputToStderr bool // If true, output progress to stderr instead of stdout
+	totalBytes     int64
+	uploadedBytes  int64
+	startTime      time.Time
+	lastUpdate     time.Time
+	lastBytes      int64
+	isComplete     bool
+	startOnce      sync.Once
+	mode           string // "upload" or "download"
+	outputToStderr bool   // If true, output progress to stderr instead of stdout
 }
 
 // NewProgressTracker creates a new progress tracker

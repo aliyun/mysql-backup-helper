@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"os"
 	"strings"
 	"time"
 )
@@ -160,8 +161,8 @@ func StartStreamReceiver(port int, enableHandshake bool, handshakeKey string, to
 		localIP = "127.0.0.1" // fallback to localhost
 	}
 
-	fmt.Printf("[backup-helper] Listening on %s:%d\n", localIP, actualPort)
-	fmt.Printf("[backup-helper] Waiting for remote connection...\n")
+	fmt.Fprintf(os.Stderr, "[backup-helper] Listening on %s:%d\n", localIP, actualPort)
+	fmt.Fprintf(os.Stderr, "[backup-helper] Waiting for remote connection...\n")
 
 	// Create progress tracker for download mode
 	tracker := NewDownloadProgressTracker(totalSize)
@@ -172,7 +173,7 @@ func StartStreamReceiver(port int, enableHandshake bool, handshakeKey string, to
 			ln.Close()
 			return nil, nil, nil, 0, "", fmt.Errorf("failed to accept connection on port %d: %v", actualPort, err)
 		}
-		fmt.Println("[backup-helper] Remote client connected, no handshake required.")
+		fmt.Fprintf(os.Stderr, "[backup-helper] Remote client connected, no handshake required.\n")
 		closer := func() { tracker.Complete(); conn.Close(); ln.Close() }
 		progressReader := NewProgressReader(conn, tracker, 64*1024)
 		return struct {
@@ -186,7 +187,7 @@ func StartStreamReceiver(port int, enableHandshake bool, handshakeKey string, to
 			ln.Close()
 			return nil, nil, nil, 0, "", fmt.Errorf("failed to accept connection on port %d: %v", actualPort, err)
 		}
-		fmt.Println("[backup-helper] Remote client connected, waiting for handshake...")
+		fmt.Fprintf(os.Stderr, "[backup-helper] Remote client connected, waiting for handshake...\n")
 
 		goAway := false
 		// set timeout to prevent from hanging
@@ -200,7 +201,7 @@ func StartStreamReceiver(port int, enableHandshake bool, handshakeKey string, to
 			line = strings.TrimSpace(line)
 			if line == handshakeKey {
 				conn.SetReadDeadline(time.Time{}) // cancel timeout
-				fmt.Println("[backup-helper] Handshake OK, start receiving backup...")
+				fmt.Fprintf(os.Stderr, "[backup-helper] Handshake OK, start receiving backup...\n")
 				closer := func() { tracker.Complete(); conn.Close(); ln.Close() }
 				progressReader := NewProgressReader(conn, tracker, 64*1024)
 				return struct {

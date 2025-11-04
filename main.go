@@ -146,8 +146,13 @@ func main() {
 
 	// 4. Handle --download mode
 	if doDownload {
-		// Display header
-		outputHeader()
+		// Display header (only if not outputting to stdout)
+		if downloadOutput != "-" {
+			outputHeader()
+		} else {
+			// When outputting to stdout, output header to stderr
+			outputHeaderToStderr()
+		}
 
 		// Parse stream-port from command line or config
 		if streamPort == 0 && !isFlagPassed("stream-port") && cfg.StreamPort > 0 {
@@ -174,12 +179,24 @@ func main() {
 		}
 
 		// Display IO limit
-		if ioLimit == -1 {
-			i18n.Printf("[backup-helper] Rate limiting disabled (unlimited speed)\n")
-		} else if ioLimit > 0 {
-			i18n.Printf("[backup-helper] IO rate limit set to: %s/s\n", formatBytes(ioLimit))
-		} else if cfg.Traffic > 0 {
-			i18n.Printf("[backup-helper] IO rate limit set to: %s/s (default)\n", formatBytes(cfg.Traffic))
+		if outputPath == "-" {
+			// Output to stderr when streaming to stdout
+			if ioLimit == -1 {
+				i18n.Fprintf(os.Stderr, "[backup-helper] Rate limiting disabled (unlimited speed)\n")
+			} else if ioLimit > 0 {
+				i18n.Fprintf(os.Stderr, "[backup-helper] IO rate limit set to: %s/s\n", formatBytes(ioLimit))
+			} else if cfg.Traffic > 0 {
+				i18n.Fprintf(os.Stderr, "[backup-helper] IO rate limit set to: %s/s (default)\n", formatBytes(cfg.Traffic))
+			}
+		} else {
+			// Output to stdout when saving to file
+			if ioLimit == -1 {
+				i18n.Printf("[backup-helper] Rate limiting disabled (unlimited speed)\n")
+			} else if ioLimit > 0 {
+				i18n.Printf("[backup-helper] IO rate limit set to: %s/s\n", formatBytes(ioLimit))
+			} else if cfg.Traffic > 0 {
+				i18n.Printf("[backup-helper] IO rate limit set to: %s/s (default)\n", formatBytes(cfg.Traffic))
+			}
 		}
 
 		// Start TCP receiver
@@ -187,7 +204,7 @@ func main() {
 		_ = actualPort // Port info already displayed in StartStreamReceiver
 		_ = localIP    // IP info already displayed in StartStreamReceiver
 		if err != nil {
-			i18n.Printf("Stream receiver error: %v\n", err)
+			i18n.Fprintf(os.Stderr, "Stream receiver error: %v\n", err)
 			os.Exit(1)
 		}
 		defer closer() // This will call tracker.Complete() internally
@@ -617,6 +634,29 @@ func outputHeader() {
 	fmt.Printf("%s%s\n", strings.Repeat(" ", pad2), subtitle)
 	fmt.Printf("%sVersion: %s    Time: %s\n", strings.Repeat(" ", 10), version, timeStr)
 	i18n.Printf("%s\n", bar)
+}
+
+func outputHeaderToStderr() {
+	bar := strings.Repeat("#", 80)
+	title := "MySQL Backup Helper"
+	subtitle := "Powered by Alibaba Cloud Inc"
+	version := "v1.0.0"
+	timeStr := time.Now().Format("2006-01-02 15:04:05")
+
+	fmt.Fprintf(os.Stderr, "%s\n", bar)
+	// center display
+	pad := (80 - len(title)) / 2
+	if pad < 0 {
+		pad = 0
+	}
+	fmt.Fprintf(os.Stderr, "%s%s\n", strings.Repeat(" ", pad), title)
+	pad2 := (80 - len(subtitle)) / 2
+	if pad2 < 0 {
+		pad2 = 0
+	}
+	fmt.Fprintf(os.Stderr, "%s%s\n", strings.Repeat(" ", pad2), subtitle)
+	fmt.Fprintf(os.Stderr, "%sVersion: %s    Time: %s\n", strings.Repeat(" ", 10), version, timeStr)
+	i18n.Fprintf(os.Stderr, "%s\n", bar)
 }
 
 // check if command line parameter is set
