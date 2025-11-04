@@ -32,8 +32,6 @@ func main() {
 	var streamKey string
 	var existedBackup string
 	var downloadOutput string
-	var extractTo string
-	var extractCompressType string
 	var showVersion bool
 	var estimatedSizeStr string
 	var estimatedSize int64
@@ -43,8 +41,6 @@ func main() {
 	flag.BoolVar(&doBackup, "backup", false, "Run xtrabackup and upload to OSS")
 	flag.BoolVar(&doDownload, "download", false, "Download backup from TCP stream (listen on port)")
 	flag.StringVar(&downloadOutput, "output", "", "Output file path for download mode (use '-' for stdout, default: backup_YYYYMMDDHHMMSS.xb)")
-	flag.StringVar(&extractTo, "extract-to", "", "Extract backup data directly to directory using xbstream (requires xbstream in PATH)")
-	flag.StringVar(&extractCompressType, "extract-compress-type", "", "Compression type for extraction: 'zstd' or 'qp'/'qpress' (only needed if backup is compressed)")
 	flag.StringVar(&estimatedSizeStr, "estimated-size", "", "Estimated backup size with unit (e.g., '100MB', '1GB', '500KB') or bytes (for progress tracking)")
 	flag.StringVar(&ioLimitStr, "io-limit", "", "IO bandwidth limit with unit (e.g., '100MB/s', '1GB/s', '500KB/s') or bytes per second. Use -1 for unlimited speed")
 	flag.StringVar(&existedBackup, "existed-backup", "", "Path to existing xtrabackup backup file to upload (use '-' for stdin)")
@@ -166,61 +162,6 @@ func main() {
 			streamKey = cfg.StreamKey
 		}
 
-		// Check if extract-to is specified
-		if extractTo != "" {
-			// Validate extract target directory
-			targetDir, err := utils.GetExtractTargetDir(extractTo)
-			if err != nil {
-				i18n.Printf("Error validating extract target directory: %v\n", err)
-				os.Exit(1)
-			}
-
-			// Display IO limit
-			if ioLimit == -1 {
-				i18n.Printf("[backup-helper] Rate limiting disabled (unlimited speed)\n")
-			} else if ioLimit > 0 {
-				i18n.Printf("[backup-helper] IO rate limit set to: %s/s\n", formatBytes(ioLimit))
-			} else if cfg.Traffic > 0 {
-				i18n.Printf("[backup-helper] IO rate limit set to: %s/s (default)\n", formatBytes(cfg.Traffic))
-			}
-
-			// Start TCP receiver
-			receiver, _, closer, actualPort, localIP, err := utils.StartStreamReceiver(streamPort, enableHandshake, streamKey, estimatedSize)
-			_ = actualPort // Port info already displayed in StartStreamReceiver
-			_ = localIP    // IP info already displayed in StartStreamReceiver
-			if err != nil {
-				i18n.Printf("Stream receiver error: %v\n", err)
-				os.Exit(1)
-			}
-			defer closer() // This will call tracker.Complete() internally
-
-			// Apply rate limiting if configured
-			var reader io.Reader = receiver
-			if cfg.Traffic > 0 {
-				rateLimitedReader := utils.NewRateLimitedReader(receiver, cfg.Traffic)
-				reader = rateLimitedReader
-			}
-
-			// Extract directly to target directory
-			i18n.Printf("[backup-helper] Receiving backup data and extracting to: %s\n", targetDir)
-			
-			// Determine if compression is needed
-			isCompressed := extractCompressType != ""
-			if isCompressed {
-				i18n.Printf("[backup-helper] Compression type: %s\n", extractCompressType)
-				err = utils.ExtractXbstreamWithDecompress(reader, targetDir, true, extractCompressType)
-			} else {
-				err = utils.ExtractXbstream(reader, targetDir)
-			}
-			
-			if err != nil {
-				i18n.Printf("Extraction error: %v\n", err)
-				os.Exit(1)
-			}
-			i18n.Printf("[backup-helper] Extraction completed successfully to: %s\n", targetDir)
-			return
-		}
-
 		// Determine output file path
 		outputPath := downloadOutput
 		if outputPath == "" && cfg.DownloadOutput != "" {
@@ -242,7 +183,7 @@ func main() {
 		}
 
 		// Start TCP receiver
-		receiver, _, closer, actualPort, localIP, err := utils.StartStreamReceiver(streamPort, enableHandshake, streamKey, estimatedSize)
+		receiver, tracker, closer, actualPort, localIP, err := utils.StartStreamReceiver(streamPort, enableHandshake, streamKey, estimatedSize)
 		_ = actualPort // Port info already displayed in StartStreamReceiver
 		_ = localIP    // IP info already displayed in StartStreamReceiver
 		if err != nil {
@@ -251,26 +192,34 @@ func main() {
 		}
 		defer closer() // This will call tracker.Complete() internally
 
-		// Apply rate limiting if configured
-		var reader io.Reader = receiver
-		if cfg.Traffic > 0 {
-			rateLimitedReader := utils.NewRateLimitedReader(receiver, cfg.Traffic)
-			reader = rateLimitedReader
-		}
-
 		// Determine output destination
 		if outputPath == "-" {
-			// Stream to stdout
-			i18n.Printf("[backup-helper] Receiving backup data and streaming to stdout...\n")
+			// Stream to stdout - set tracker to output progress to stderr
+			if tracker != nil {
+				tracker.SetOutputToStderr(true)
+			}
+			i18n.Fprintf(os.Stderr, "[backup-helper] Receiving backup data and streaming to stdout...\n")
+			// Apply rate limiting if configured
+			var reader io.Reader = receiver
+			if cfg.Traffic > 0 {
+				rateLimitedReader := utils.NewRateLimitedReader(receiver, cfg.Traffic)
+				reader = rateLimitedReader
+			}
 			_, err = io.Copy(os.Stdout, reader)
 			if err != nil {
-				i18n.Printf("Download error: %v\n", err)
+				i18n.Fprintf(os.Stderr, "Download error: %v\n", err)
 				os.Exit(1)
 			}
 			// Progress tracker will display completion message via closer()
 		} else {
 			// Write to file
 			i18n.Printf("[backup-helper] Receiving backup data and saving to: %s\n", outputPath)
+			// Apply rate limiting if configured
+			var reader io.Reader = receiver
+			if cfg.Traffic > 0 {
+				rateLimitedReader := utils.NewRateLimitedReader(receiver, cfg.Traffic)
+				reader = rateLimitedReader
+			}
 			file, err := os.Create(outputPath)
 			if err != nil {
 				i18n.Printf("Failed to create output file: %v\n", err)
@@ -607,8 +556,8 @@ func main() {
 			}
 			if streamPort > 0 {
 				i18n.Printf("[backup-helper] Starting TCP stream server on port %d...\n", streamPort)
-			i18n.Printf("[backup-helper] Equivalent command: cat %s | nc -l4 %d\n",
-				equivalentSource, streamPort)
+				i18n.Printf("[backup-helper] Equivalent command: cat %s | nc -l4 %d\n",
+					equivalentSource, streamPort)
 			} else {
 				i18n.Printf("[backup-helper] Starting TCP stream server (auto-find available port)...\n")
 			}

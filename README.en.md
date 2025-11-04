@@ -81,8 +81,6 @@ A high-efficiency MySQL physical backup and OSS upload tool. Supports Percona Xt
 | --existed-backup     | Path to existing xtrabackup backup file to upload or stream (use '-' for stdin) |
 | --estimated-size     | Estimated backup size with units (e.g., '100MB', '1GB') or bytes (for progress tracking) |
 | --io-limit           | IO bandwidth limit with units (e.g., '100MB/s', '1GB/s') or bytes per second. Use -1 for unlimited speed |
-| --extract-to         | Download mode: Extract backup data directly to directory using xbstream (requires xbstream in PATH) |
-| --extract-compress-type | Compression type for extraction: 'zstd' or 'qp'/'qpress' (only needed if backup is compressed) |
 | --version, -v        | Show version information                                               |
 
 ---
@@ -206,30 +204,20 @@ cat backup.xb | ./backup-helper --config config.json --existed-backup - --mode=s
 # Download to specified file
 ./backup-helper --download --stream-port 9999 --output my_backup.xb
 
-# Stream to stdout (can be used with pipes for compression)
+# Stream to stdout (can be used with pipes for compression or extraction)
 ./backup-helper --download --stream-port 9999 --output - | zstd -d > backup.xb
+
+# Direct extraction using xbstream
+./backup-helper --download --stream-port 9999 --output - | xbstream -x -C /path/to/extract/dir
+
+# If backup is compressed, decompress first then extract
+./backup-helper --download --stream-port 9999 --output - | xbstream -x -C /path/to/extract/dir --decompress --decompress-threads=4
 
 # Download with rate limiting
 ./backup-helper --download --stream-port 9999 --io-limit 100MB/s
 
 # Download with progress display (requires estimated size)
 ./backup-helper --download --stream-port 9999 --estimated-size 1GB
-
-# Stream extract to data directory (recommended)
-./backup-helper --download --stream-port 9999 --extract-to /data/mysql
-
-# Extract compressed backup (zstd compression)
-./backup-helper --download --stream-port 9999 --extract-to /data/mysql --extract-compress-type zstd
-
-# Extract compressed backup (qpress compression)
-./backup-helper --download --stream-port 9999 --extract-to /data/mysql --extract-compress-type qp
-```
-
-**Stream Extraction Notes**:
-- Use `--extract-to` to directly extract received backup data to a directory using `xbstream`
-- If the backup is compressed, specify `--extract-compress-type` (supports `zstd` and `qp`/`qpress`)
-- Extraction is stream-based, no need to save file first, saving disk space and time
-- After extraction, use `xtrabackup --prepare` and `xtrabackup --copy-back` to complete restoration
 
 ---
 

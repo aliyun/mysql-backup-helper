@@ -3,6 +3,7 @@ package utils
 import (
 	"fmt"
 	"io"
+	"os"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -21,6 +22,7 @@ type ProgressTracker struct {
 	isComplete    bool
 	startOnce     sync.Once
 	mode          string // "upload" or "download"
+	outputToStderr bool // If true, output progress to stderr instead of stdout
 }
 
 // NewProgressTracker creates a new progress tracker
@@ -43,6 +45,11 @@ func NewDownloadProgressTracker(totalBytes int64) *ProgressTracker {
 	return pt
 }
 
+// SetOutputToStderr sets whether progress should be output to stderr instead of stdout
+func (pt *ProgressTracker) SetOutputToStderr(outputToStderr bool) {
+	pt.outputToStderr = outputToStderr
+}
+
 // Update updates the uploaded bytes and displays progress
 func (pt *ProgressTracker) Update(bytes int64) {
 	// Start timer on first data transfer
@@ -61,18 +68,24 @@ func (pt *ProgressTracker) Complete() {
 	pt.isComplete = true
 	totalBytes := atomic.LoadInt64(&pt.uploadedBytes)
 
+	// Use stderr if outputToStderr is true, otherwise use stdout (via fmt.Print/i18n.Printf)
+	outputWriter := os.Stderr
+	if !pt.outputToStderr {
+		outputWriter = os.Stdout
+	}
+
 	// Clear the progress line and add a newline
-	fmt.Print("\r" + strings.Repeat(" ", 100) + "\r\n")
+	fmt.Fprint(outputWriter, "\r"+strings.Repeat(" ", 100)+"\r\n")
 
 	// Only calculate duration if we actually started (startTime is not zero)
 	if pt.startTime.IsZero() {
 		// No data was transferred
 		if pt.mode == "download" {
-			i18n.Printf("[backup-helper] Download completed!\n")
-			i18n.Printf("  Total downloaded: %s\n", FormatBytes(totalBytes))
+			i18n.Fprintf(outputWriter, "[backup-helper] Download completed!\n")
+			i18n.Fprintf(outputWriter, "  Total downloaded: %s\n", FormatBytes(totalBytes))
 		} else {
-			i18n.Printf("[backup-helper] Upload completed!\n")
-			i18n.Printf("  Total uploaded: %s\n", FormatBytes(totalBytes))
+			i18n.Fprintf(outputWriter, "[backup-helper] Upload completed!\n")
+			i18n.Fprintf(outputWriter, "  Total uploaded: %s\n", FormatBytes(totalBytes))
 		}
 		return
 	}
@@ -81,14 +94,14 @@ func (pt *ProgressTracker) Complete() {
 	avgSpeed := float64(totalBytes) / duration.Seconds()
 
 	if pt.mode == "download" {
-		i18n.Printf("[backup-helper] Download completed!\n")
-		i18n.Printf("  Total downloaded: %s\n", FormatBytes(totalBytes))
+		i18n.Fprintf(outputWriter, "[backup-helper] Download completed!\n")
+		i18n.Fprintf(outputWriter, "  Total downloaded: %s\n", FormatBytes(totalBytes))
 	} else {
-		i18n.Printf("[backup-helper] Upload completed!\n")
-		i18n.Printf("  Total uploaded: %s\n", FormatBytes(totalBytes))
+		i18n.Fprintf(outputWriter, "[backup-helper] Upload completed!\n")
+		i18n.Fprintf(outputWriter, "  Total uploaded: %s\n", FormatBytes(totalBytes))
 	}
-	i18n.Printf("  Duration: %s\n", formatDuration(duration))
-	i18n.Printf("  Average speed: %s/s\n", FormatBytes(int64(avgSpeed)))
+	i18n.Fprintf(outputWriter, "  Duration: %s\n", formatDuration(duration))
+	i18n.Fprintf(outputWriter, "  Average speed: %s/s\n", FormatBytes(int64(avgSpeed)))
 }
 
 // displayProgress displays current progress
@@ -131,7 +144,12 @@ func (pt *ProgressTracker) displayProgress() {
 		)
 	}
 
-	fmt.Print(progressLine)
+	// Output to stderr if outputToStderr is true, otherwise stdout
+	if pt.outputToStderr {
+		fmt.Fprint(os.Stderr, progressLine)
+	} else {
+		fmt.Print(progressLine)
+	}
 
 	pt.lastUpdate = now
 	pt.lastBytes = uploaded

@@ -81,8 +81,6 @@
 | --existed-backup     | 已存在的xtrabackup备份文件路径，用于上传或流式传输（使用'-'表示从stdin读取） |
 | --estimated-size     | 预估备份大小，支持单位（如 '100MB', '1GB'）或字节（用于进度跟踪） |
 | --io-limit           | IO 带宽限制，支持单位（如 '100MB/s', '1GB/s'）或字节/秒，使用 -1 表示不限速 |
-| --extract-to         | 下载模式：直接使用 xbstream 解包到指定目录（需要 xbstream 在 PATH 中） |
-| --extract-compress-type | 解包时的压缩类型：'zstd' 或 'qp'/'qpress'（仅在备份被压缩时需要） |
 | --version, -v        | 显示版本信息                                                      |
 
 ---
@@ -207,30 +205,21 @@ cat backup.xb | ./backup-helper --config config.json --existed-backup - --mode=s
 # 下载到指定文件
 ./backup-helper --download --stream-port 9999 --output my_backup.xb
 
-# 流式输出到 stdout（可用于管道压缩）
+# 流式输出到 stdout（可用于管道压缩或解包）
 ./backup-helper --download --stream-port 9999 --output - | zstd -d > backup.xb
+
+# 直接使用 xbstream 解包到目录
+./backup-helper --download --stream-port 9999 --output - | xbstream -x -C /path/to/extract/dir
+
+# 如果备份是压缩的，需要先解压缩再解包
+./backup-helper --download --stream-port 9999 --output - | xbstream -x -C /path/to/extract/dir --decompress --decompress-threads=4
 
 # 带限速下载
 ./backup-helper --download --stream-port 9999 --io-limit 100MB/s
 
 # 带进度显示（需要提供预估大小）
 ./backup-helper --download --stream-port 9999 --estimated-size 1GB
-
-# 流式解包到数据目录（推荐）
-./backup-helper --download --stream-port 9999 --extract-to /data/mysql
-
-# 解包压缩备份（zstd 压缩）
-./backup-helper --download --stream-port 9999 --extract-to /data/mysql --extract-compress-type zstd
-
-# 解包压缩备份（qpress 压缩）
-./backup-helper --download --stream-port 9999 --extract-to /data/mysql --extract-compress-type qp
 ```
-
-**流式解包说明**：
-- 使用 `--extract-to` 参数可以直接将接收到的备份数据通过 `xbstream` 解包到指定目录
-- 如果备份是压缩的，需要指定 `--extract-compress-type`（支持 `zstd` 和 `qp`/`qpress`）
-- 解包过程是流式的，不需要先保存文件再解包，节省磁盘空间和时间
-- 解包完成后，可以使用 `xtrabackup --prepare` 和 `xtrabackup --copy-back` 完成恢复
 
 ---
 
