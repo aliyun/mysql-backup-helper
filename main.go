@@ -19,6 +19,7 @@ func main() {
 	utils.InitI18nAuto()
 
 	var doBackup bool
+	var doDownload bool
 	var configPath string
 	var host, user, password string
 	var port int
@@ -30,9 +31,18 @@ func main() {
 	var enableHandshake bool
 	var streamKey string
 	var existedBackup string
+	var downloadOutput string
 	var showVersion bool
+	var estimatedSizeStr string
+	var estimatedSize int64
+	var ioLimitStr string
+	var ioLimit int64
 
 	flag.BoolVar(&doBackup, "backup", false, "Run xtrabackup and upload to OSS")
+	flag.BoolVar(&doDownload, "download", false, "Download backup from TCP stream (listen on port)")
+	flag.StringVar(&downloadOutput, "output", "", "Output file path for download mode (use '-' for stdout, default: backup_YYYYMMDDHHMMSS.xb)")
+	flag.StringVar(&estimatedSizeStr, "estimated-size", "", "Estimated backup size with unit (e.g., '100MB', '1GB', '500KB') or bytes (for progress tracking)")
+	flag.StringVar(&ioLimitStr, "io-limit", "", "IO bandwidth limit with unit (e.g., '100MB/s', '1GB/s', '500KB/s') or bytes per second. Use -1 for unlimited speed")
 	flag.StringVar(&existedBackup, "existed-backup", "", "Path to existing xtrabackup backup file to upload (use '-' for stdin)")
 	flag.BoolVar(&showVersion, "version", false, "Show version information")
 	flag.BoolVar(&showVersion, "v", false, "Show version information (shorthand)")
@@ -41,7 +51,7 @@ func main() {
 	flag.IntVar(&port, "port", 0, "Port number to use for connection")
 	flag.StringVar(&user, "user", "", "User for login")
 	flag.StringVar(&password, "password", "", "Password to use when connecting to server. If password is not given it's asked from the tty.")
-	flag.IntVar(&streamPort, "stream-port", 0, "If set, stream backup to this local TCP port for remote pulling")
+	flag.IntVar(&streamPort, "stream-port", 0, "Local TCP port for streaming (0 = auto-find available port)")
 	flag.StringVar(&mode, "mode", "oss", "Backup mode: oss (upload to OSS) or stream (push to TCP port)")
 	flag.StringVar(&compressType, "compress-type", "", "Compress type: qp(qpress)/zstd, priority is higher than config file")
 	flag.StringVar(&langFlag, "lang", "", "Language: zh (Chinese) or en (English), auto-detect if unset")
@@ -102,7 +112,150 @@ func main() {
 		existedBackup = cfg.ExistedBackup
 	}
 
-	// 4. If --backup, run backup/upload
+	// Parse estimatedSize from command line or config
+	if estimatedSizeStr != "" {
+		parsedSize, err := utils.ParseSize(estimatedSizeStr)
+		if err != nil {
+			i18n.Printf("Error parsing --estimated-size '%s': %v\n", estimatedSizeStr, err)
+			os.Exit(1)
+		}
+		estimatedSize = parsedSize
+	} else if estimatedSize == 0 && cfg.EstimatedSize > 0 {
+		estimatedSize = cfg.EstimatedSize
+	}
+
+	// Parse ioLimit from command line or config
+	if ioLimitStr != "" {
+		parsedLimit, err := utils.ParseRateLimit(ioLimitStr)
+		if err != nil {
+			i18n.Printf("Error parsing --io-limit '%s': %v\n", ioLimitStr, err)
+			os.Exit(1)
+		}
+		ioLimit = parsedLimit
+	} else if ioLimit == 0 && cfg.IOLimit > 0 {
+		ioLimit = cfg.IOLimit
+	}
+
+	// Update traffic config based on ioLimit
+	if ioLimit == -1 {
+		cfg.Traffic = 0 // 0 means unlimited
+	} else if ioLimit > 0 {
+		cfg.Traffic = ioLimit
+	}
+	// If ioLimit is 0, cfg.Traffic will use default from SetDefaults()
+
+	// 4. Handle --download mode
+	if doDownload {
+		// Display header (only if not outputting to stdout)
+		if downloadOutput != "-" {
+			outputHeader()
+		} else {
+			// When outputting to stdout, output header to stderr
+			outputHeaderToStderr()
+		}
+
+		// Parse stream-port from command line or config
+		if streamPort == 0 && !isFlagPassed("stream-port") && cfg.StreamPort > 0 {
+			streamPort = cfg.StreamPort
+		}
+
+		// Parse handshake settings
+		if !isFlagPassed("enable-handshake") {
+			enableHandshake = cfg.EnableHandshake
+		}
+		if streamKey == "" {
+			streamKey = cfg.StreamKey
+		}
+
+		// Determine output file path
+		outputPath := downloadOutput
+		if outputPath == "" && cfg.DownloadOutput != "" {
+			outputPath = cfg.DownloadOutput
+		}
+		if outputPath == "" {
+			// Default: backup_YYYYMMDDHHMMSS.xb
+			timestamp := time.Now().Format("20060102150405")
+			outputPath = fmt.Sprintf("backup_%s.xb", timestamp)
+		}
+
+		// Display IO limit
+		if outputPath == "-" {
+			// Output to stderr when streaming to stdout
+			if ioLimit == -1 {
+				i18n.Fprintf(os.Stderr, "[backup-helper] Rate limiting disabled (unlimited speed)\n")
+			} else if ioLimit > 0 {
+				i18n.Fprintf(os.Stderr, "[backup-helper] IO rate limit set to: %s/s\n", formatBytes(ioLimit))
+			} else if cfg.Traffic > 0 {
+				i18n.Fprintf(os.Stderr, "[backup-helper] IO rate limit set to: %s/s (default)\n", formatBytes(cfg.Traffic))
+			}
+		} else {
+			// Output to stdout when saving to file
+			if ioLimit == -1 {
+				i18n.Printf("[backup-helper] Rate limiting disabled (unlimited speed)\n")
+			} else if ioLimit > 0 {
+				i18n.Printf("[backup-helper] IO rate limit set to: %s/s\n", formatBytes(ioLimit))
+			} else if cfg.Traffic > 0 {
+				i18n.Printf("[backup-helper] IO rate limit set to: %s/s (default)\n", formatBytes(cfg.Traffic))
+			}
+		}
+
+		// Start TCP receiver
+		receiver, tracker, closer, actualPort, localIP, err := utils.StartStreamReceiver(streamPort, enableHandshake, streamKey, estimatedSize)
+		_ = actualPort // Port info already displayed in StartStreamReceiver
+		_ = localIP    // IP info already displayed in StartStreamReceiver
+		if err != nil {
+			i18n.Fprintf(os.Stderr, "Stream receiver error: %v\n", err)
+			os.Exit(1)
+		}
+		defer closer() // This will call tracker.Complete() internally
+
+		// Determine output destination
+		if outputPath == "-" {
+			// Stream to stdout - set tracker to output progress to stderr
+			if tracker != nil {
+				tracker.SetOutputToStderr(true)
+			}
+			i18n.Fprintf(os.Stderr, "[backup-helper] Receiving backup data and streaming to stdout...\n")
+			// Apply rate limiting if configured
+			var reader io.Reader = receiver
+			if cfg.Traffic > 0 {
+				rateLimitedReader := utils.NewRateLimitedReader(receiver, cfg.Traffic)
+				reader = rateLimitedReader
+			}
+			_, err = io.Copy(os.Stdout, reader)
+			if err != nil {
+				i18n.Fprintf(os.Stderr, "Download error: %v\n", err)
+				os.Exit(1)
+			}
+			// Progress tracker will display completion message via closer()
+		} else {
+			// Write to file
+			i18n.Printf("[backup-helper] Receiving backup data and saving to: %s\n", outputPath)
+			// Apply rate limiting if configured
+			var reader io.Reader = receiver
+			if cfg.Traffic > 0 {
+				rateLimitedReader := utils.NewRateLimitedReader(receiver, cfg.Traffic)
+				reader = rateLimitedReader
+			}
+			file, err := os.Create(outputPath)
+			if err != nil {
+				i18n.Printf("Failed to create output file: %v\n", err)
+				os.Exit(1)
+			}
+			defer file.Close()
+
+			_, err = io.Copy(file, reader)
+			if err != nil {
+				i18n.Printf("Download error: %v\n", err)
+				os.Exit(1)
+			}
+			// Progress tracker will display completion message via closer()
+			i18n.Printf("[backup-helper] Saved to: %s\n", outputPath)
+		}
+		return
+	}
+
+	// 5. If --backup, run backup/upload
 	if doBackup {
 		// MySQL param check (only needed for backup)
 		if password == "" {
@@ -118,6 +271,16 @@ func main() {
 		defer db.Close()
 		options := utils.CollectVariableFromMySQLServer(db)
 		utils.Check(options, cfg)
+
+		// Display IO limit after parameter check
+		if ioLimit == -1 {
+			i18n.Printf("[backup-helper] Rate limiting disabled (unlimited speed)\n")
+		} else if ioLimit > 0 {
+			i18n.Printf("[backup-helper] IO rate limit set to: %s/s\n", formatBytes(ioLimit))
+		} else if cfg.Traffic > 0 {
+			// Using default rate limit
+			i18n.Printf("[backup-helper] IO rate limit set to: %s/s (default)\n", formatBytes(cfg.Traffic))
+		}
 
 		// Check xtrabackup version (run early)
 		mysqlVer := cfg.MysqlVersion
@@ -159,17 +322,40 @@ func main() {
 			os.Exit(1)
 		}
 
+		// Calculate total size for progress tracking
+		var totalSize int64
+		if estimatedSize > 0 {
+			totalSize = estimatedSize
+			i18n.Printf("[backup-helper] Using estimated size: %s\n", formatBytes(totalSize))
+		} else {
+			// Calculate datadir size
+			datadir, err := utils.GetDatadirFromMySQL(db)
+			if err != nil {
+				i18n.Printf("Warning: Could not get datadir, progress tracking will be limited: %v\n", err)
+			} else {
+				totalSize, err = utils.CalculateBackupSize(datadir)
+				if err != nil {
+					i18n.Printf("Warning: Could not calculate backup size, progress tracking will be limited: %v\n", err)
+					totalSize = 0
+				} else {
+					i18n.Printf("[backup-helper] Calculated datadir size: %s\n", formatBytes(totalSize))
+				}
+			}
+		}
+
 		switch mode {
 		case "oss":
 			i18n.Printf("[backup-helper] Uploading to OSS...\n")
-			err = utils.UploadReaderToOSS(cfg, fullObjectName, reader)
+			err = utils.UploadReaderToOSS(cfg, fullObjectName, reader, totalSize)
 			if err != nil {
 				i18n.Printf("OSS upload error: %v\n", err)
 				cmd.Process.Kill()
 				os.Exit(1)
 			}
 		case "stream":
-			if streamPort == 0 {
+			// Only use config value if command line didn't specify and config has non-zero value
+			// streamPort 0 means auto-find available port
+			if streamPort == 0 && !isFlagPassed("stream-port") && cfg.StreamPort > 0 {
 				streamPort = cfg.StreamPort
 			}
 			// handshake priority：command line > config > default
@@ -179,17 +365,24 @@ func main() {
 			if streamKey == "" {
 				streamKey = cfg.StreamKey
 			}
-			if streamPort == 0 {
-				i18n.Printf("You must specify --stream-port when mode=stream\n")
-				os.Exit(1)
-			}
-			tcpWriter, closer, err := utils.StartStreamServer(streamPort, enableHandshake, streamKey)
+			// streamPort can be 0 now (auto-find available port)
+			tcpWriter, _, closer, actualPort, localIP, err := utils.StartStreamSender(streamPort, enableHandshake, streamKey, totalSize)
+			_ = actualPort // Port info already displayed in StartStreamSender
+			_ = localIP    // IP info already displayed in StartStreamSender
 			if err != nil {
 				i18n.Printf("Stream server error: %v\n", err)
 				os.Exit(1)
 			}
 			defer closer()
-			_, err = io.Copy(tcpWriter, reader)
+
+			// Apply rate limiting for stream mode if configured
+			writer := tcpWriter
+			if cfg.Traffic > 0 {
+				rateLimitedWriter := utils.NewRateLimitedWriter(tcpWriter, cfg.Traffic)
+				writer = rateLimitedWriter
+			}
+
+			_, err = io.Copy(writer, reader)
 			if err != nil {
 				i18n.Printf("TCP stream error: %v\n", err)
 				cmd.Process.Kill()
@@ -278,6 +471,16 @@ func main() {
 			os.Exit(1)
 		}
 
+		// Display IO limit after validation
+		if ioLimit == -1 {
+			i18n.Printf("[backup-helper] Rate limiting disabled (unlimited speed)\n")
+		} else if ioLimit > 0 {
+			i18n.Printf("[backup-helper] IO rate limit set to: %s/s\n", formatBytes(ioLimit))
+		} else if cfg.Traffic > 0 {
+			// Using default rate limit
+			i18n.Printf("[backup-helper] IO rate limit set to: %s/s (default)\n", formatBytes(cfg.Traffic))
+		}
+
 		// Get reader from existing backup file or stdin
 		var reader io.Reader
 		if existedBackup == "-" {
@@ -319,18 +522,38 @@ func main() {
 		timestamp := time.Now().Format("_20060102150405")
 		fullObjectName := ossObjectName + timestamp + objectSuffix
 
+		// Calculate total size for existing backup
+		var totalSize int64
+		if estimatedSize > 0 {
+			totalSize = estimatedSize
+			i18n.Printf("[backup-helper] Using estimated size: %s\n", formatBytes(totalSize))
+		} else if existedBackup != "-" {
+			// Get file size for existing backup file
+			totalSize, err = utils.GetFileSize(existedBackup)
+			if err != nil {
+				i18n.Printf("Warning: Could not get backup file size, progress tracking will be limited: %v\n", err)
+				totalSize = 0
+			} else {
+				i18n.Printf("[backup-helper] Backup file size: %s\n", formatBytes(totalSize))
+			}
+		} else {
+			// stdin - we can't get size
+			i18n.Printf("[backup-helper] Uploading from stdin, size unknown\n")
+		}
+
 		switch mode {
 		case "oss":
 			i18n.Printf("[backup-helper] Uploading existing backup to OSS...\n")
-			err := utils.UploadReaderToOSS(cfg, fullObjectName, reader)
+			err := utils.UploadReaderToOSS(cfg, fullObjectName, reader, totalSize)
 			if err != nil {
 				i18n.Printf("OSS upload error: %v\n", err)
 				os.Exit(1)
 			}
 			i18n.Printf("[backup-helper] OSS upload completed!\n")
 		case "stream":
-			// Set stream port
-			if streamPort == 0 {
+			// Only use config value if command line didn't specify and config has non-zero value
+			// streamPort 0 means auto-find available port
+			if streamPort == 0 && !isFlagPassed("stream-port") && cfg.StreamPort > 0 {
 				streamPort = cfg.StreamPort
 			}
 
@@ -342,30 +565,40 @@ func main() {
 				streamKey = cfg.StreamKey
 			}
 
-			if streamPort == 0 {
-				i18n.Printf("You must specify --stream-port when mode=stream\n")
-				os.Exit(1)
-			}
-
-			i18n.Printf("[backup-helper] Starting TCP stream server on port %d...\n", streamPort)
-			// Show equivalent command
+			// streamPort can be 0 now (auto-find available port)
+			// Show equivalent command (before starting server, so we show original port)
 			equivalentSource := existedBackup
 			if existedBackup == "-" {
 				equivalentSource = "stdin"
 			}
-			i18n.Printf("[backup-helper] Equivalent command: cat %s | nc -l4 %d\n",
-				equivalentSource, streamPort)
+			if streamPort > 0 {
+				i18n.Printf("[backup-helper] Starting TCP stream server on port %d...\n", streamPort)
+				i18n.Printf("[backup-helper] Equivalent command: cat %s | nc -l4 %d\n",
+					equivalentSource, streamPort)
+			} else {
+				i18n.Printf("[backup-helper] Starting TCP stream server (auto-find available port)...\n")
+			}
 
-			tcpWriter, closer, err := utils.StartStreamServer(streamPort, enableHandshake, streamKey)
+			tcpWriter, _, closer, actualPort, localIP, err := utils.StartStreamSender(streamPort, enableHandshake, streamKey, totalSize)
+			_ = actualPort // Port info already displayed in StartStreamSender
+			_ = localIP    // IP info already displayed in StartStreamSender
 			if err != nil {
 				i18n.Printf("Stream server error: %v\n", err)
 				os.Exit(1)
 			}
 			defer closer()
 
+			// Apply rate limiting for stream mode if configured
+			writer := tcpWriter
+			if cfg.Traffic > 0 {
+				rateLimitedWriter := utils.NewRateLimitedWriter(tcpWriter, cfg.Traffic)
+				writer = rateLimitedWriter
+			}
+
 			// Stream the backup data
 			i18n.Printf("[backup-helper] Streaming backup data...\n")
-			_, err = io.Copy(tcpWriter, reader)
+
+			_, err = io.Copy(writer, reader)
 			if err != nil {
 				i18n.Printf("TCP stream error: %v\n", err)
 				os.Exit(1)
@@ -403,6 +636,29 @@ func outputHeader() {
 	i18n.Printf("%s\n", bar)
 }
 
+func outputHeaderToStderr() {
+	bar := strings.Repeat("#", 80)
+	title := "MySQL Backup Helper"
+	subtitle := "Powered by Alibaba Cloud Inc"
+	version := "v1.0.0"
+	timeStr := time.Now().Format("2006-01-02 15:04:05")
+
+	fmt.Fprintf(os.Stderr, "%s\n", bar)
+	// center display
+	pad := (80 - len(title)) / 2
+	if pad < 0 {
+		pad = 0
+	}
+	fmt.Fprintf(os.Stderr, "%s%s\n", strings.Repeat(" ", pad), title)
+	pad2 := (80 - len(subtitle)) / 2
+	if pad2 < 0 {
+		pad2 = 0
+	}
+	fmt.Fprintf(os.Stderr, "%s%s\n", strings.Repeat(" ", pad2), subtitle)
+	fmt.Fprintf(os.Stderr, "%sVersion: %s    Time: %s\n", strings.Repeat(" ", 10), version, timeStr)
+	i18n.Fprintf(os.Stderr, "%s\n", bar)
+}
+
 // check if command line parameter is set
 func isFlagPassed(name string) bool {
 	found := false
@@ -412,4 +668,18 @@ func isFlagPassed(name string) bool {
 		}
 	})
 	return found
+}
+
+// formatBytes formats bytes to human-readable format
+func formatBytes(bytes int64) string {
+	const unit = 1024
+	if bytes < unit {
+		return fmt.Sprintf("%d B", bytes)
+	}
+	div, exp := int64(unit), 0
+	for n := bytes / unit; n >= unit; n /= unit {
+		div *= unit
+		exp++
+	}
+	return fmt.Sprintf("%.1f %cB", float64(bytes)/float64(div), "KMGTPE"[exp])
 }

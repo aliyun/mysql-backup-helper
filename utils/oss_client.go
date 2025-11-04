@@ -27,8 +27,12 @@ func (listener *OssProgressListener) ProgressChanged(event *oss.ProgressEvent) {
 }
 
 // UploadReaderToOSS supports fragmenting upload from io.Reader to OSS, objectName is passed by the caller
-func UploadReaderToOSS(cfg *Config, objectName string, reader io.Reader) error {
+func UploadReaderToOSS(cfg *Config, objectName string, reader io.Reader, totalSize int64) error {
 	var waitSender sync.WaitGroup
+
+	// Create progress tracker
+	tracker := NewProgressTracker(totalSize)
+	defer tracker.Complete()
 
 	client, err := oss.New(cfg.Endpoint, cfg.AccessKeyId, cfg.AccessKeySecret)
 	if err != nil {
@@ -49,7 +53,9 @@ func UploadReaderToOSS(cfg *Config, objectName string, reader io.Reader) error {
 	if bufferSize == 0 {
 		bufferSize = 1024 * 1024 * 100 // 100MB
 	}
-	bufReader := bufio.NewReaderSize(reader, bufferSize)
+	// Wrap reader with progress tracker
+	progressReader := NewProgressReader(reader, tracker, bufferSize)
+	bufReader := bufio.NewReaderSize(progressReader, bufferSize)
 
 	var parts []oss.UploadPart
 	index := 1
@@ -87,11 +93,21 @@ func UploadReaderToOSS(cfg *Config, objectName string, reader io.Reader) error {
 
 func uploadPart(bucket *oss.Bucket, imur oss.InitiateMultipartUploadResult, data []byte, index int, traffic int64) (oss.UploadPart, error) {
 	reader := bytes.NewReader(data)
-	part, err := bucket.UploadPart(imur, reader, int64(len(data)), index, oss.Progress(&OssProgressListener{}), oss.TrafficLimitHeader(traffic))
-	if err != nil {
-		return oss.UploadPart{}, err
+	// If traffic is 0, don't apply rate limiting (unlimited)
+	if traffic > 0 {
+		part, err := bucket.UploadPart(imur, reader, int64(len(data)), index, oss.Progress(&OssProgressListener{}), oss.TrafficLimitHeader(traffic))
+		if err != nil {
+			return oss.UploadPart{}, err
+		}
+		return part, nil
+	} else {
+		// No rate limiting
+		part, err := bucket.UploadPart(imur, reader, int64(len(data)), index, oss.Progress(&OssProgressListener{}))
+		if err != nil {
+			return oss.UploadPart{}, err
+		}
+		return part, nil
 	}
-	return part, nil
 }
 
 // DeleteOSSObject deletes the specified OSS object, objectName is passed by the caller

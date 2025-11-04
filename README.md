@@ -34,7 +34,7 @@
   "objectName": "backup/your-backup",   // 只需前缀，实际文件名会自动加时间戳和后缀
   "size": 104857600,
   "buffer": 10,
-  "traffic": 83886080,
+  "traffic": 209715200,
   "mysqlHost": "127.0.0.1",
   "mysqlPort": 3306,
   "mysqlUser": "root",
@@ -45,7 +45,9 @@
   "enableHandshake": false,
   "streamKey": "your-secret-key",
   "existedBackup": "",
-  "logDir": "/var/log/mysql-backup-helper"
+  "logDir": "/var/log/mysql-backup-helper",
+  "estimatedSize": 0,
+  "ioLimit": 0
 }
 ```
 
@@ -66,8 +68,10 @@
 | --user              | MySQL 用户名（优先于配置文件）                               |
 | --password          | MySQL 密码（优先于配置文件，未指定则交互输入）               |
 | --backup            | 启动备份流程（否则只做参数检查）                             |
+| --download          | 下载模式：从 TCP 流接收备份数据并保存                       |
+| --output            | 下载模式输出文件路径（使用 '-' 表示输出到 stdout，默认：backup_YYYYMMDDHHMMSS.xb） |
 | --mode              | 备份模式：`oss`（上传到 OSS）或 `stream`（推送到 TCP 端口）  |
-| --stream-port       | 流式推送时监听的本地端口（如 9999）                          |
+| --stream-port       | 流式推送时监听的本地端口（如 9999，设为 0 则自动查找空闲端口） |
 | --compress          | 启用压缩                                                  |
 | --compress-type     | 压缩类型：`qp`（qpress）、`zstd`          |
 | --lang              | 语言：`zh`（中文）或 `en`（英文），不指定则自动检测系统语言   |
@@ -75,6 +79,8 @@
 | --enable-handshake   | TCP流推送启用握手认证（默认false，可在配置文件设置）         |
 | --stream-key         | TCP流推送握手密钥（默认空，可在配置文件设置）                |
 | --existed-backup     | 已存在的xtrabackup备份文件路径，用于上传或流式传输（使用'-'表示从stdin读取） |
+| --estimated-size     | 预估备份大小，支持单位（如 '100MB', '1GB'）或字节（用于进度跟踪） |
+| --io-limit           | IO 带宽限制，支持单位（如 '100MB/s', '1GB/s'）或字节/秒，使用 -1 表示不限速 |
 | --version, -v        | 显示版本信息                                                      |
 
 ---
@@ -115,7 +121,20 @@ go build -a -o backup-helper main.go
 nc 127.0.0.1 9999 > streamed-backup.xb
 ```
 
+### 5.1. 自动查找空闲端口（推荐）
+
+```sh
+./backup-helper --config config.json --backup --mode=stream --stream-port=0
+# 程序会自动找到空闲端口并显示本地 IP 和端口
+# 输出示例：
+# [backup-helper] Listening on 192.168.1.100:54321
+# [backup-helper] Waiting for remote connection...
+# 另一个终端拉流（使用显示的端口）
+nc 192.168.1.100 54321 > streamed-backup.xb
+```
+
 - **stream 模式下所有压缩参数均无效，始终为原始物理备份流。**
+- **自动查找端口时会自动获取本地 IP 并显示在输出中，便于远程连接。**
 
 ### 6. 仅做参数检查（不备份）
 
@@ -155,12 +174,92 @@ cat backup.xb | ./backup-helper --config config.json --existed-backup - --mode=o
 cat backup.xb | ./backup-helper --config config.json --existed-backup - --mode=stream --stream-port=9999
 ```
 
+### 12. 手动指定上传限速（如限制到 100 MB/s）
+
+```sh
+./backup-helper --config config.json --backup --mode=oss --io-limit 100MB/s
+# 支持单位：KB/s, MB/s, GB/s, TB/s，也可以直接使用字节/秒
+```
+
+### 13. 禁用限速（不限速上传）
+
+```sh
+./backup-helper --config config.json --backup --mode=oss --io-limit -1
+# 使用 -1 表示完全禁用限速，以最大速度上传
+```
+
+### 14. 指定预估大小以显示准确的进度
+
+```sh
+./backup-helper --config config.json --backup --mode=oss --estimated-size 1GB
+# 支持单位：KB, MB, GB, TB，也可以直接使用字节
+# 例如：--estimated-size 1073741824 或 --estimated-size 1GB
+```
+
+### 15. 下载模式：从 TCP 流接收备份数据
+
+```sh
+# 下载到默认文件（backup_YYYYMMDDHHMMSS.xb）
+./backup-helper --download --stream-port 9999
+
+# 下载到指定文件
+./backup-helper --download --stream-port 9999 --output my_backup.xb
+
+# 流式输出到 stdout（可用于管道压缩或解包）
+./backup-helper --download --stream-port 9999 --output - | zstd -d > backup.xb
+
+# 直接使用 xbstream 解包到目录
+./backup-helper --download --stream-port 9999 --output - | xbstream -x -C /path/to/extract/dir
+
+# 如果备份是压缩的，需要先解压缩再解包
+./backup-helper --download --stream-port 9999 --output - | xbstream -x -C /path/to/extract/dir --decompress --decompress-threads=4
+
+# 带限速下载
+./backup-helper --download --stream-port 9999 --io-limit 100MB/s
+
+# 带进度显示（需要提供预估大小）
+./backup-helper --download --stream-port 9999 --estimated-size 1GB
+```
+
 ---
 
 ## 日志与对象命名
 
 - 所有备份日志自动保存在 `logs/` 目录，仅保留最近 10 个日志文件。
 - OSS 对象名自动加时间戳，如 `backup/your-backup_202507181648.xb.zst`，便于归档和查找。
+
+## 进度跟踪
+
+工具会在备份上传过程中实时显示进度信息：
+
+- **实时进度**：显示已上传/已下载大小、总大小、百分比、传输速度和持续时间
+- **最终统计**：显示总上传/总下载大小、持续时间、平均速度
+- **大小计算**：
+  - 如果提供了 `--estimated-size`，直接使用该值（支持单位：KB, MB, GB, TB）
+  - 对于实时备份，自动计算 MySQL datadir 大小
+  - 对于已有备份文件，自动读取文件大小
+  - 从 stdin 读取时，无法获取大小，只显示上传量和速度
+
+## 带宽限速
+
+- **默认限速**：如果不指定 `--io-limit`，默认使用 200 MB/s 的限速
+- **手动限速**：使用 `--io-limit` 指定上传/下载带宽限制
+  - 支持单位：`KB/s`, `MB/s`, `GB/s`, `TB/s`（如 `100MB/s`, `1GB/s`）
+  - 也可以直接使用字节/秒（如 `104857600` 表示 100 MB/s）
+  - 使用 `-1` 表示完全禁用限速（不限速上传）
+- **配置文件**：可以在配置文件中设置 `ioLimit` 字段，或使用 `traffic` 字段（单位：字节/秒）
+
+示例输出：
+```
+[backup-helper] IO rate limit set to: 100.0 MB/s
+
+Progress: 1.1 GB / 1.5 GB (73.3%) - 98.5 MB/s - Duration: 11.4s
+Progress: 1.3 GB / 1.5 GB (86.7%) - 99.2 MB/s - Duration: 13.1s
+[backup-helper] Upload completed!
+  Total uploaded: 1.5 GB
+  Duration: 15s
+  Average speed: 102.4 MB/s
+```
 
 ---
 

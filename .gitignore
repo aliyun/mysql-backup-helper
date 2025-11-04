@@ -17,3 +17,4 @@
 
 ./backup-helper
 ./oss_stream/oss-stream
+./mysql-backup-helper

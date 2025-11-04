@@ -29,6 +29,9 @@ type Config struct {
 	StreamKey       string  `json:"streamKey"`
 	ExistedBackup   string  `json:"existedBackup"`
 	LogDir          string  `json:"logDir"`
+	EstimatedSize   int64   `json:"estimatedSize"`
+	IOLimit         int64   `json:"ioLimit"`
+	DownloadOutput  string  `json:"downloadOutput"`
 }
 
 func LoadConfig(path string) (*Config, error) {
@@ -49,11 +52,9 @@ func (c *Config) SetDefaults() {
 		c.Buffer = 10
 	}
 	if c.Traffic == 0 {
-		c.Traffic = 83886080 // 10MB
+		c.Traffic = 209715200 // 200MB/s
 	}
-	if c.StreamPort == 0 {
-		c.StreamPort = 9999
-	}
+	// Note: StreamPort 0 means auto-find available port, don't set default to 9999
 	if c.MysqlPort == 0 {
 		c.MysqlPort = 3306
 	}
