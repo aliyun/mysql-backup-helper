@@ -477,6 +477,8 @@ func main() {
 			}
 			os.Exit(1)
 		}
+		// Ensure a newline before completion message (in case progress tracker didn't clear properly)
+		fmt.Print("\n")
 		i18n.Printf("[backup-helper] Backup and upload completed!\n")
 		return
 	} else if existedBackup != "" {

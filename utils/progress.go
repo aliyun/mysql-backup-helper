@@ -75,7 +75,8 @@ func (pt *ProgressTracker) Complete() {
 	}
 
 	// Clear the progress line and add a newline
-	fmt.Fprint(outputWriter, "\r"+strings.Repeat(" ", 100)+"\r\n")
+	// Use more spaces to ensure complete clearing (terminal width is typically 80-120 chars)
+	fmt.Fprint(outputWriter, "\r"+strings.Repeat(" ", 150)+"\r\n")
 
 	// Only calculate duration if we actually started (startTime is not zero)
 	if pt.startTime.IsZero() {
