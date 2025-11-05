@@ -34,7 +34,6 @@ A high-efficiency MySQL physical backup and OSS upload tool. Supports Percona Xt
   "objectName": "backup/your-backup",   // Only prefix needed, timestamp and suffix are auto-appended
   "size": 104857600,
   "buffer": 10,
-  "traffic": 209715200,
   "mysqlHost": "127.0.0.1",
   "mysqlPort": 3306,
   "mysqlUser": "root",

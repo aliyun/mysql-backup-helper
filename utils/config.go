@@ -14,7 +14,6 @@ type Config struct {
 	ObjectName      string  `json:"objectName"`
 	Size            int     `json:"size"`
 	Buffer          int     `json:"buffer"`
-	Traffic         int64   `json:"traffic"`
 	MysqlHost       string  `json:"mysqlHost"`
 	MysqlPort       int     `json:"mysqlPort"`
 	MysqlUser       string  `json:"mysqlUser"`
@@ -52,9 +51,6 @@ func (c *Config) SetDefaults() {
 	}
 	if c.Buffer == 0 {
 		c.Buffer = 10
-	}
-	if c.Traffic == 0 {
-		c.Traffic = 209715200 // 200MB/s
 	}
 	// Note: StreamPort 0 means auto-find available port, don't set default to 9999
 	if c.MysqlPort == 0 {

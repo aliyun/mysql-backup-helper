@@ -144,13 +144,17 @@ func main() {
 		ioLimit = cfg.IOLimit
 	}
 
-	// Update traffic config based on ioLimit
+	// Calculate internal traffic limit based on ioLimit
+	// traffic is an internal variable for rate limiting, not exposed in config
+	var traffic int64
 	if ioLimit == -1 {
-		cfg.Traffic = 0 // 0 means unlimited
+		traffic = 0 // 0 means unlimited
 	} else if ioLimit > 0 {
-		cfg.Traffic = ioLimit
+		traffic = ioLimit
+	} else {
+		// Default: 200MB/s
+		traffic = 209715200
 	}
-	// If ioLimit is 0, cfg.Traffic will use default from SetDefaults()
 
 	// 4. Handle --download mode
 	if doDownload {
@@ -199,8 +203,8 @@ func main() {
 				i18n.Fprintf(os.Stderr, "[backup-helper] Rate limiting disabled (unlimited speed)\n")
 			} else if ioLimit > 0 {
 				i18n.Fprintf(os.Stderr, "[backup-helper] IO rate limit set to: %s/s\n", formatBytes(ioLimit))
-			} else if cfg.Traffic > 0 {
-				i18n.Fprintf(os.Stderr, "[backup-helper] IO rate limit set to: %s/s (default)\n", formatBytes(cfg.Traffic))
+			} else if traffic > 0 {
+				i18n.Fprintf(os.Stderr, "[backup-helper] IO rate limit set to: %s/s (default)\n", formatBytes(traffic))
 			}
 		} else {
 			// Output to stdout when saving to file
@@ -208,8 +212,8 @@ func main() {
 				i18n.Printf("[backup-helper] Rate limiting disabled (unlimited speed)\n")
 			} else if ioLimit > 0 {
 				i18n.Printf("[backup-helper] IO rate limit set to: %s/s\n", formatBytes(ioLimit))
-			} else if cfg.Traffic > 0 {
-				i18n.Printf("[backup-helper] IO rate limit set to: %s/s (default)\n", formatBytes(cfg.Traffic))
+			} else if traffic > 0 {
+				i18n.Printf("[backup-helper] IO rate limit set to: %s/s (default)\n", formatBytes(traffic))
 			}
 		}
 
@@ -225,8 +229,8 @@ func main() {
 
 		// Apply rate limiting if configured
 		var reader io.Reader = receiver
-		if cfg.Traffic > 0 {
-			rateLimitedReader := utils.NewRateLimitedReader(receiver, cfg.Traffic)
+		if traffic > 0 {
+			rateLimitedReader := utils.NewRateLimitedReader(receiver, traffic)
 			reader = rateLimitedReader
 		}
 
@@ -339,9 +343,9 @@ func main() {
 			i18n.Printf("[backup-helper] Rate limiting disabled (unlimited speed)\n")
 		} else if ioLimit > 0 {
 			i18n.Printf("[backup-helper] IO rate limit set to: %s/s\n", formatBytes(ioLimit))
-		} else if cfg.Traffic > 0 {
+		} else if traffic > 0 {
 			// Using default rate limit
-			i18n.Printf("[backup-helper] IO rate limit set to: %s/s (default)\n", formatBytes(cfg.Traffic))
+			i18n.Printf("[backup-helper] IO rate limit set to: %s/s (default)\n", formatBytes(traffic))
 		}
 
 		// Check xtrabackup version (run early)
@@ -408,7 +412,7 @@ func main() {
 		switch mode {
 		case "oss":
 			i18n.Printf("[backup-helper] Uploading to OSS...\n")
-			err = utils.UploadReaderToOSS(cfg, fullObjectName, reader, totalSize)
+			err = utils.UploadReaderToOSS(cfg, fullObjectName, reader, totalSize, traffic)
 			if err != nil {
 				i18n.Printf("OSS upload error: %v\n", err)
 				cmd.Process.Kill()
@@ -539,8 +543,8 @@ func main() {
 
 			// Apply rate limiting for stream mode if configured
 			var finalWriter io.WriteCloser = writer
-			if cfg.Traffic > 0 {
-				rateLimitedWriter := utils.NewRateLimitedWriter(writer, cfg.Traffic)
+			if traffic > 0 {
+				rateLimitedWriter := utils.NewRateLimitedWriter(writer, traffic)
 				finalWriter = rateLimitedWriter
 			}
 
@@ -640,9 +644,9 @@ func main() {
 			i18n.Printf("[backup-helper] Rate limiting disabled (unlimited speed)\n")
 		} else if ioLimit > 0 {
 			i18n.Printf("[backup-helper] IO rate limit set to: %s/s\n", formatBytes(ioLimit))
-		} else if cfg.Traffic > 0 {
+		} else if traffic > 0 {
 			// Using default rate limit
-			i18n.Printf("[backup-helper] IO rate limit set to: %s/s (default)\n", formatBytes(cfg.Traffic))
+			i18n.Printf("[backup-helper] IO rate limit set to: %s/s (default)\n", formatBytes(traffic))
 		}
 
 		// Get reader from existing backup file or stdin
@@ -786,8 +790,8 @@ func main() {
 
 			// Apply rate limiting for stream mode if configured
 			var finalWriter io.WriteCloser = writer
-			if cfg.Traffic > 0 {
-				rateLimitedWriter := utils.NewRateLimitedWriter(writer, cfg.Traffic)
+			if traffic > 0 {
+				rateLimitedWriter := utils.NewRateLimitedWriter(writer, traffic)
 				finalWriter = rateLimitedWriter
 			}
 

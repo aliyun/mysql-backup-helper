@@ -34,7 +34,6 @@
   "objectName": "backup/your-backup",   // 只需前缀，实际文件名会自动加时间戳和后缀
   "size": 104857600,
   "buffer": 10,
-  "traffic": 209715200,
   "mysqlHost": "127.0.0.1",
   "mysqlPort": 3306,
   "mysqlUser": "root",

@@ -27,7 +27,8 @@ func (listener *OssProgressListener) ProgressChanged(event *oss.ProgressEvent) {
 }
 
 // UploadReaderToOSS supports fragmenting upload from io.Reader to OSS, objectName is passed by the caller
-func UploadReaderToOSS(cfg *Config, objectName string, reader io.Reader, totalSize int64) error {
+// traffic: rate limit in bytes per second (0 means unlimited)
+func UploadReaderToOSS(cfg *Config, objectName string, reader io.Reader, totalSize int64, traffic int64) error {
 	var waitSender sync.WaitGroup
 
 	// Create progress tracker
@@ -65,7 +66,7 @@ func UploadReaderToOSS(cfg *Config, objectName string, reader io.Reader, totalSi
 		if n > 0 {
 			data := p[:n]
 			waitSender.Add(1)
-			part, err := uploadPart(bucket, imur, data, index, cfg.Traffic)
+			part, err := uploadPart(bucket, imur, data, index, traffic)
 			if err != nil {
 				bucket.AbortMultipartUpload(imur)
 				return err
