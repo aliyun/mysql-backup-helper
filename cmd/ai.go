@@ -67,7 +67,7 @@ func runAI(cmd *cobra.Command, args []string) error {
 
 // diagnoseLogFile diagnoses a backup log file
 func diagnoseLogFile(client *ai.QwenClient, logPath string) error {
-	i18n.Printf("Reading log file: %s\n", logPath)
+	logVerbose("Reading log file: %s\n", logPath)
 
 	content, err := os.ReadFile(logPath)
 	if err != nil {
@@ -78,7 +78,7 @@ func diagnoseLogFile(client *ai.QwenClient, logPath string) error {
 		return fmt.Errorf("log file is empty")
 	}
 
-	i18n.Printf("Analyzing log with AI...\n\n")
+	logInfo("Analyzing log with AI...\n\n")
 
 	suggestion, err := client.Diagnose(string(content))
 	if err != nil {
@@ -93,7 +93,7 @@ func diagnoseLogFile(client *ai.QwenClient, logPath string) error {
 
 // answerQuestion answers a question about MySQL backup
 func answerQuestion(client *ai.QwenClient, question string) error {
-	i18n.Printf("Question: %s\n\n", question)
+	logVerbose("Question: %s\n\n", question)
 
 	// Prepare context for MySQL backup questions
 	contextualQuestion := fmt.Sprintf("As a MySQL backup expert using xtrabackup, please answer this question: %s", question)

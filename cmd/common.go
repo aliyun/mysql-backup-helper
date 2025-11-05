@@ -128,3 +128,22 @@ func printIOLimit(traffic int64) {
 		i18n.Printf("[backup-helper] IO rate limit set to: %s/s\n", format.Bytes(traffic))
 	}
 }
+
+// logInfo prints info messages (suppressed in quiet mode)
+func logInfo(format string, args ...interface{}) {
+	if !IsQuiet() {
+		i18n.Printf(format, args...)
+	}
+}
+
+// logVerbose prints verbose messages (only in verbose mode)
+func logVerbose(format string, args ...interface{}) {
+	if IsVerbose() {
+		i18n.Printf(format, args...)
+	}
+}
+
+// logError prints error messages (always shown)
+func logError(format string, args ...interface{}) {
+	i18n.Printf(format, args...)
+}

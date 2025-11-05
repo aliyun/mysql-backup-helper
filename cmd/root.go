@@ -68,6 +68,10 @@ Examples:
 			cfg.SetDefaults()
 		}
 
+		// Set runtime flags
+		cfg.Quiet = quiet
+		cfg.Verbose = verbose
+
 		return nil
 	},
 }
@@ -92,4 +96,14 @@ func init() {
 // GetConfig returns the global config object
 func GetConfig() *config.Config {
 	return cfg
+}
+
+// IsQuiet returns whether quiet mode is enabled
+func IsQuiet() bool {
+	return quiet
+}
+
+// IsVerbose returns whether verbose mode is enabled
+func IsVerbose() bool {
+	return verbose
 }

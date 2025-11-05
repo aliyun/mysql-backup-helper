@@ -3,7 +3,6 @@ package cmd
 import (
 	"backup-helper/internal/service"
 
-	"github.com/gioco-play/easy-i18n/i18n"
 	"github.com/spf13/cobra"
 	"golang.org/x/term"
 )
@@ -116,14 +115,16 @@ func runBackup(cmd *cobra.Command, args []string) error {
 
 	// Prompt for password if not provided
 	if backupPassword == "" {
-		i18n.Printf("Please input mysql-server password: ")
+		logError("Please input mysql-server password: ")
 		pwd, _ := term.ReadPassword(0)
-		i18n.Printf("\n")
+		logError("\n")
 		backupPassword = string(pwd)
 	}
 
-	i18n.Printf("connect to mysql-server host=%s port=%d user=%s\n", backupHost, backupPort, backupUser)
-	outputHeader()
+	logVerbose("connect to mysql-server host=%s port=%d user=%s\n", backupHost, backupPort, backupUser)
+	if !IsQuiet() {
+		outputHeader()
+	}
 
 	// Update config with command line values
 	cfg.MysqlHost = backupHost

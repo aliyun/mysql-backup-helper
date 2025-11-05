@@ -28,6 +28,25 @@ func NewBackupService(cfg *config.Config) *BackupService {
 	return &BackupService{cfg: cfg}
 }
 
+// logInfo prints info messages (suppressed in quiet mode)
+func (s *BackupService) logInfo(format string, args ...interface{}) {
+	if !s.cfg.Quiet {
+		i18n.Printf(format, args...)
+	}
+}
+
+// logVerbose prints verbose messages (only in verbose mode)
+func (s *BackupService) logVerbose(format string, args ...interface{}) {
+	if s.cfg.Verbose {
+		i18n.Printf(format, args...)
+	}
+}
+
+// logError prints error/warning messages (always shown)
+func (s *BackupService) logError(format string, args ...interface{}) {
+	i18n.Printf(format, args...)
+}
+
 // BackupOptions contains options for backup execution
 type BackupOptions struct {
 	Mode       string // "oss" or "stream"
@@ -96,9 +115,9 @@ func (s *BackupService) validateMySQLConnection() (*mysql.Connection, error) {
 // displayIOLimit displays IO rate limit information
 func (s *BackupService) displayIOLimit() {
 	if s.cfg.Traffic == 0 {
-		i18n.Printf("[backup-helper] Rate limiting disabled (unlimited speed)\n")
+		s.logInfo("[backup-helper] Rate limiting disabled (unlimited speed)\n")
 	} else {
-		i18n.Printf("[backup-helper] IO rate limit set to: %s/s\n", format.Bytes(s.cfg.Traffic))
+		s.logInfo("[backup-helper] IO rate limit set to: %s/s\n", format.Bytes(s.cfg.Traffic))
 	}
 }
 
@@ -114,7 +133,7 @@ func (s *BackupService) checkXtraBackupVersion() {
 
 // executeXtraBackup executes xtrabackup and returns reader
 func (s *BackupService) executeXtraBackup() (io.Reader, *exec.Cmd, string, error) {
-	i18n.Printf("[backup-helper] Running xtrabackup...\n")
+	s.logInfo("[backup-helper] Running xtrabackup...\n")
 	executor := backup.NewExecutor(s.cfg)
 	return executor.Execute()
 }
@@ -123,17 +142,17 @@ func (s *BackupService) executeXtraBackup() (io.Reader, *exec.Cmd, string, error
 func (s *BackupService) calculateTotalSize(conn *mysql.Connection) int64 {
 	datadir, err := conn.GetDatadir()
 	if err != nil {
-		i18n.Printf("Warning: Could not get datadir, progress tracking will be limited: %v\n", err)
+		s.logError("Warning: Could not get datadir, progress tracking will be limited: %v\n", err)
 		return 0
 	}
 
 	totalSize, err := backup.CalculateDatadirSize(datadir)
 	if err != nil {
-		i18n.Printf("Warning: Could not calculate backup size, progress tracking will be limited: %v\n", err)
+		s.logError("Warning: Could not calculate backup size, progress tracking will be limited: %v\n", err)
 		return 0
 	}
 
-	i18n.Printf("[backup-helper] Calculated datadir size: %s\n", format.Bytes(totalSize))
+	s.logVerbose("[backup-helper] Calculated datadir size: %s\n", format.Bytes(totalSize))
 	return totalSize
 }
 
@@ -169,11 +188,11 @@ func (s *BackupService) transferBackup(opts *BackupOptions, reader io.Reader, xt
 
 // transferToOSS uploads backup to OSS
 func (s *BackupService) transferToOSS(reader io.Reader, xtraCmd *exec.Cmd, fullObjectName string, totalSize int64) error {
-	i18n.Printf("[backup-helper] Uploading to OSS...\n")
+	s.logInfo("[backup-helper] Uploading to OSS...\n")
 	uploader := oss.NewUploader(s.cfg)
 	err := uploader.Upload(nil, reader, fullObjectName, totalSize)
 	if err != nil {
-		i18n.Printf("OSS upload error: %v\n", err)
+		s.logError("OSS upload error: %v\n", err)
 		if xtraCmd != nil && xtraCmd.Process != nil {
 			xtraCmd.Process.Kill()
 		}
@@ -200,7 +219,7 @@ func (s *BackupService) transferToStream(opts *BackupOptions, reader io.Reader, 
 
 	_, err = io.Copy(writer, reader)
 	if err != nil {
-		i18n.Printf("TCP stream error: %v\n", err)
+		s.logError("TCP stream error: %v\n", err)
 		if xtraCmd != nil && xtraCmd.Process != nil {
 			xtraCmd.Process.Kill()
 		}
@@ -217,13 +236,13 @@ func (s *BackupService) validateBackupResult(logFileName string) error {
 	}
 
 	if !strings.Contains(string(logContent), "completed OK!") {
-		i18n.Printf("Backup failed (no 'completed OK!').\n")
-		i18n.Printf("You can check the backup log file for details: %s\n", logFileName)
-		i18n.Printf("\n💡 Tip: Use AI to diagnose the issue:\n")
-		i18n.Printf("   mysql-backup-helper ai --log-file %s\n", logFileName)
+		s.logError("Backup failed (no 'completed OK!').\n")
+		s.logError("You can check the backup log file for details: %s\n", logFileName)
+		s.logError("\n💡 Tip: Use AI to diagnose the issue:\n")
+		s.logError("   mysql-backup-helper ai --log-file %s\n", logFileName)
 		return fmt.Errorf("backup failed")
 	}
 
-	i18n.Printf("[backup-helper] Backup and upload completed!\n")
+	s.logInfo("[backup-helper] Backup and upload completed!\n")
 	return nil
 }

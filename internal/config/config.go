@@ -60,6 +60,10 @@ type Config struct {
 
 	// AI diagnosis configuration
 	QwenAPIKey string `json:"qwenAPIKey"` // Qwen API key for AI diagnosis
+
+	// Runtime flags (not from config file)
+	Quiet   bool `json:"-"` // Quiet mode (minimal output)
+	Verbose bool `json:"-"` // Verbose mode (detailed output)
 }
 
 // LoadConfig loads configuration from a JSON file
