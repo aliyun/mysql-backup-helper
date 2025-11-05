@@ -9,8 +9,8 @@
 - 🗜️ **智能压缩**：支持 zstd、qpress 压缩算法
 - 🌐 **多语言支持**：自动检测系统语言（中文/英文）
 - 📊 **实时进度**：实时显示备份进度、速度、剩余时间
-- 🔒 **安全传输**：支持 TCP 握手认证
-- 🤖 **AI 诊断**：备份失败时支持 AI 智能诊断（Qwen）
+- 🔒 **安全传输**：支持 TCP 流认证
+- 🤖 **AI 诊断**：独立 AI 命令支持日志诊断和问答（Qwen）
 - ⚡ **带宽控制**：可配置上传/下载速率限制
 
 ---
@@ -52,11 +52,11 @@
   "mysqlPassword": "your-mysql-password",
   "compress": true,
   "compressType": "zstd",
+  "mode": "oss",
   "streamPort": 9999,
-  "enableHandshake": false,
-  "streamKey": "your-secret-key",
+  "enableAuth": false,
+  "authKey": "your-secret-key",
   "logDir": "/var/log/mysql-backup-helper",
-  "estimatedSize": 0,
   "qwenAPIKey": ""
 }
 ```
@@ -86,15 +86,15 @@
 - **compress**: 是否启用压缩（true/false）
 - **compressType**: 压缩类型（zstd、qp 或留空）
 
-#### 流式传输配置
+#### 模式配置
+- **mode**: 备份模式（oss 或 stream，默认 oss）
 - **streamPort**: TCP 端口号（0=自动查找空闲端口）
-- **enableHandshake**: 是否启用握手认证（默认 false）
-- **streamKey**: 握手密钥（用于身份验证）
+- **enableAuth**: 是否启用流认证（默认 false）
+- **authKey**: 认证密钥（用于流传输身份验证）
 
 #### 其他配置
 - **logDir**: 日志文件存储目录（默认 `/var/log/mysql-backup-helper`，支持相对/绝对路径）
-- **estimatedSize**: 预估备份大小（字节，用于进度显示）
-- **qwenAPIKey**: Qwen AI API 密钥（用于 AI 诊断功能）
+- **qwenAPIKey**: Qwen AI API 密钥（用于 AI 命令）
 
 **注意**：命令行参数会覆盖配置文件中的设置。
 
@@ -125,25 +125,23 @@
 | --port              | MySQL 端口（默认 3306）                                |
 | --user              | MySQL 用户名                                           |
 | --password          | MySQL 密码（未指定则交互输入）                         |
-| --to-oss            | 上传到阿里云 OSS                                       |
-| --to-stream         | 通过 TCP 流传输（端口号，0=自动查找）                  |
+| --mode              | 备份模式：oss 或 stream（默认：oss）                   |
+| --stream-port       | TCP 流端口号（仅 stream 模式，0=自动查找）             |
 | --compress-type     | 压缩类型：zstd、qp 或 none                             |
-| --estimated-size    | 预估备份大小（如 '10GB'）                              |
 | --io-limit          | IO 带宽限制（如 '100MB/s'，-1=不限速）                 |
-| --enable-handshake  | 启用 TCP 握手认证                                      |
-| --stream-key        | TCP 握手密钥                                           |
-| --ai-diagnose       | AI 诊断：on、off 或 auto（默认）                       |
+| --enable-auth       | 启用流认证（仅 stream 模式）                           |
+| --auth-key          | 认证密钥（仅 stream 模式）                             |
 
 **示例**：
 ```bash
 # 备份并上传到 OSS
-backup-helper backup --host 127.0.0.1 --user root --to-oss
+backup-helper backup --host 127.0.0.1 --user root --mode oss
 
 # 备份并通过 TCP 流传输
-backup-helper backup --host 127.0.0.1 --user root --to-stream 9000
+backup-helper backup --host 127.0.0.1 --user root --mode stream --stream-port 9000
 
 # 使用 zstd 压缩并限速
-backup-helper backup --host 127.0.0.1 --user root --to-oss \
+backup-helper backup --host 127.0.0.1 --user root --mode oss \
   --compress-type zstd --io-limit 100MB/s
 ```
 
@@ -157,25 +155,24 @@ backup-helper backup --host 127.0.0.1 --user root --to-oss \
 |---------------------|--------------------------------------------|
 | --file              | 备份文件路径（'-' 表示从 stdin 读取）      |
 | --stdin             | 从 stdin 读取备份数据                      |
-| --to-oss            | 上传到阿里云 OSS                           |
-| --to-stream         | 通过 TCP 流传输（端口号）                  |
+| --mode              | 传输模式：oss 或 stream（默认：oss）       |
+| --stream-port       | TCP 流端口号（仅 stream 模式）             |
 | --skip-validation   | 跳过备份文件验证                           |
 | --validate-only     | 仅验证文件，不传输                         |
-| --estimated-size    | 预估大小（用于进度显示）                   |
 | --io-limit          | IO 带宽限制                                |
-| --enable-handshake  | 启用 TCP 握手认证                          |
-| --stream-key        | TCP 握手密钥                               |
+| --enable-auth       | 启用流认证（仅 stream 模式）               |
+| --auth-key          | 认证密钥（仅 stream 模式）                 |
 
 **示例**：
 ```bash
 # 上传备份文件到 OSS
-backup-helper send --file backup.xb --to-oss
+backup-helper send --file backup.xb --mode oss
 
 # 通过 TCP 流传输备份文件
-backup-helper send --file backup.xb --to-stream 9000
+backup-helper send --file backup.xb --mode stream --stream-port 9000
 
 # 从 stdin 读取并上传
-cat backup.xb | backup-helper send --stdin --to-oss
+cat backup.xb | backup-helper send --stdin --mode oss
 
 # 仅验证备份文件
 backup-helper send --file backup.xb --validate-only
@@ -192,10 +189,9 @@ backup-helper send --file backup.xb --validate-only
 | --from-stream       | 监听的 TCP 端口（0=自动查找）                     |
 | --output            | 输出文件路径（'-' 表示输出到 stdout，默认自动生成）|
 | --stdout            | 输出到 stdout                                     |
-| --estimated-size    | 预估大小                                          |
 | --io-limit          | IO 带宽限制                                       |
-| --enable-handshake  | 启用 TCP 握手认证                                 |
-| --stream-key        | TCP 握手密钥                                      |
+| --enable-auth       | 启用流认证                                        |
+| --auth-key          | 认证密钥                                          |
 
 **示例**：
 ```bash
@@ -207,6 +203,29 @@ backup-helper receive --from-stream 9000 --stdout | xbstream -x
 
 # 自动查找端口
 backup-helper receive --from-stream 0
+```
+
+#### 4. `ai` - AI 诊断和问答
+
+**用途**：使用 AI 诊断备份日志文件或回答 MySQL 备份相关问题。
+
+**参数**：
+
+| 参数                | 说明                                       |
+|---------------------|--------------------------------------------|
+| --log-file, -f      | 要诊断的备份日志文件路径                   |
+| --question          | 向 AI 提问关于 MySQL 备份的问题            |
+
+**示例**：
+```bash
+# 诊断备份日志文件
+backup-helper ai --log-file /var/log/mysql-backup-helper/backup.log
+
+# 向 AI 提问
+backup-helper ai --question "如何解决 Access denied 错误？"
+
+# 使用短选项
+backup-helper ai -f /var/log/mysql-backup-helper/backup.log
 ```
 
 ---
@@ -230,6 +249,7 @@ go build -o backup-helper
 ./backup-helper backup --help
 ./backup-helper send --help
 ./backup-helper receive --help
+./backup-helper ai --help
 ```
 
 ### 3. 基本用法示例
@@ -238,18 +258,18 @@ go build -o backup-helper
 
 ```bash
 # 使用配置文件
-./backup-helper backup --config config.json --to-oss
+./backup-helper backup --config config.json --mode oss
 
 # 纯命令行参数
 ./backup-helper backup --host 127.0.0.1 --user root --password xxx \
-  --to-oss --compress-type zstd
+  --mode oss --compress-type zstd
 ```
 
 #### 场景 2：备份并通过 TCP 流传输
 
 ```bash
 # 发送端（备份端）
-./backup-helper backup --host 127.0.0.1 --user root --to-stream 9000
+./backup-helper backup --host 127.0.0.1 --user root --mode stream --stream-port 9000
 
 # 接收端
 ./backup-helper receive --from-stream 9000 --output backup.xb
@@ -259,10 +279,10 @@ go build -o backup-helper
 
 ```bash
 # 上传到 OSS
-./backup-helper send --file backup.xb --to-oss
+./backup-helper send --file backup.xb --mode oss
 
 # 通过 TCP 流传输
-./backup-helper send --file backup.xb --to-stream 9000
+./backup-helper send --file backup.xb --mode stream --stream-port 9000
 ```
 
 ---
@@ -277,25 +297,26 @@ go build -o backup-helper
   --host 127.0.0.1 \
   --user root \
   --password yourpassword \
-  --to-oss \
+  --mode oss \
   --compress-type zstd \
-  --io-limit 100MB/s \
-  --estimated-size 10GB
+  --io-limit 100MB/s
 ```
 
 ### 2. 跨网络备份传输（TCP Stream）
 
 ```bash
 # 在目标服务器（接收端）
-./backup-helper receive --from-stream 9000 --output /backup/mysql_backup.xb
+./backup-helper receive --from-stream 9000 --output /backup/mysql_backup.xb \
+  --enable-auth --auth-key "your-secret-key"
 
 # 在源服务器（备份端）
 ./backup-helper backup \
   --host 127.0.0.1 \
   --user root \
-  --to-stream 9000 \
-  --enable-handshake \
-  --stream-key "your-secret-key"
+  --mode stream \
+  --stream-port 9000 \
+  --enable-auth \
+  --auth-key "your-secret-key"
 ```
 
 ### 3. 自动查找空闲端口
@@ -306,14 +327,14 @@ go build -o backup-helper
 # 输出：[backup-helper] Listening on 192.168.1.100:54321
 
 # 备份端：使用显示的端口
-./backup-helper backup --host 127.0.0.1 --user root --to-stream 54321
+./backup-helper backup --host 127.0.0.1 --user root --mode stream --stream-port 54321
 ```
 
 ### 4. 使用管道传输
 
 ```bash
 # 从 stdin 读取并上传
-cat backup.xb | ./backup-helper send --stdin --to-oss
+cat backup.xb | ./backup-helper send --stdin --mode oss
 
 # 接收并直接解包
 ./backup-helper receive --from-stream 9000 --stdout | xbstream -x -C /data/mysql
@@ -329,41 +350,51 @@ cat backup.xb | ./backup-helper send --stdin --to-oss
 ### 6. 指定英文界面
 
 ```bash
-./backup-helper backup --lang en --host 127.0.0.1 --user root --to-oss
+./backup-helper backup --lang en --host 127.0.0.1 --user root --mode oss
 ```
 
 ### 7. 禁用限速（最大速度）
 
 ```bash
-./backup-helper backup --host 127.0.0.1 --user root --to-oss --io-limit -1
+./backup-helper backup --host 127.0.0.1 --user root --mode oss --io-limit -1
 ```
 
 ### 8. 不同压缩类型
 
 ```bash
 # zstd 压缩（推荐，压缩率高）
-./backup-helper backup --host 127.0.0.1 --user root --to-oss --compress-type zstd
+./backup-helper backup --host 127.0.0.1 --user root --mode oss --compress-type zstd
 
 # qpress 压缩
-./backup-helper backup --host 127.0.0.1 --user root --to-oss --compress-type qp
+./backup-helper backup --host 127.0.0.1 --user root --mode oss --compress-type qp
 
 # 不压缩
-./backup-helper backup --host 127.0.0.1 --user root --to-oss --compress-type none
+./backup-helper backup --host 127.0.0.1 --user root --mode oss --compress-type none
 ```
 
 **注意**：stream 模式下压缩参数无效，始终传输原始数据流。
 
-### 9. AI 诊断配置
+### 9. AI 诊断使用
 
 ```bash
-# 自动诊断（需要在 config.json 中配置 qwenAPIKey）
-./backup-helper backup --host 127.0.0.1 --user root --to-oss --ai-diagnose on
+# 诊断备份日志文件（需要在 config.json 中配置 qwenAPIKey）
+./backup-helper ai --log-file /var/log/mysql-backup-helper/backup_20240101.log
 
-# 关闭 AI 诊断
-./backup-helper backup --host 127.0.0.1 --user root --to-oss --ai-diagnose off
+# 向 AI 提问
+./backup-helper ai --question "如何优化 MySQL 备份速度？"
 
-# 交互式询问（默认）
-./backup-helper backup --host 127.0.0.1 --user root --to-oss
+# 使用短选项
+./backup-helper ai -f /var/log/mysql-backup-helper/backup.log
+```
+
+**备份失败时的提示**：
+当备份失败时，工具会自动提示使用 AI 诊断命令：
+```
+Backup failed (no 'completed OK!').
+You can check the backup log file for details: /var/log/mysql-backup-helper/backup_20240101.log
+
+💡 Tip: Use AI to diagnose the issue:
+   mysql-backup-helper ai --log-file /var/log/mysql-backup-helper/backup_20240101.log
 ```
 
 ---
@@ -379,8 +410,7 @@ cat backup.xb | ./backup-helper send --stdin --to-oss
 
 - **实时进度**：显示已上传/已下载大小、总大小、百分比、传输速度和持续时间
 - **最终统计**：显示总上传/总下载大小、持续时间、平均速度
-- **大小计算**：
-  - 如果提供了 `--estimated-size`，直接使用该值（支持单位：KB, MB, GB, TB）
+- **自动大小检测**：
   - 对于实时备份，自动计算 MySQL datadir 大小
   - 对于已有备份文件，自动读取文件大小
   - 从 stdin 读取时，无法获取大小，只显示上传量和速度
@@ -503,7 +533,7 @@ sudo yum install zstd
 
 查看日志文件（默认在 `/var/log/mysql-backup-helper/` 或 `logs/` 目录）。
 
-**Q: 如何启用 AI 诊断？**
+**Q: 如何使用 AI 诊断？**
 
 在配置文件中添加：
 ```json
@@ -512,7 +542,14 @@ sudo yum install zstd
 }
 ```
 
-然后使用 `--ai-diagnose on` 参数。
+然后使用 `ai` 命令：
+```bash
+# 诊断日志文件
+./backup-helper ai --log-file /var/log/mysql-backup-helper/backup.log
+
+# 提问
+./backup-helper ai --question "如何解决连接超时问题？"
+```
 
 ### 性能问题
 
@@ -520,7 +557,7 @@ sudo yum install zstd
 
 1. 检查是否设置了 `--io-limit`，如需全速备份使用 `-1`
 2. 考虑使用 `qp` 压缩代替 `zstd`（压缩速度更快）
-3. 使用 `stream` 模式代替 `oss` 模式（跳过 OSS 上传延迟）
+3. 使用 `--mode stream` 代替 `--mode oss`（跳过 OSS 上传延迟）
 
 **Q: 日志文件堆积？**
 
