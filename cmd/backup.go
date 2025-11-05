@@ -16,22 +16,18 @@ var (
 	backupPassword string
 
 	// Destination flags
-	backupToOSS    bool
-	backupToStream int
+	backupMode       string
+	backupStreamPort int
 
 	// Compression flags
 	backupCompressType string
 
 	// Performance flags
-	backupEstimatedSize string
-	backupIOLimit       string
+	backupIOLimit string
 
-	// Stream flags
-	backupEnableHandshake bool
-	backupStreamKey       string
-
-	// Diagnostic flags
-	backupAIDiagnose string
+	// Authentication flags
+	backupEnableAuth bool
+	backupAuthKey    string
 )
 
 // backupCmd represents the backup command
@@ -42,14 +38,14 @@ var backupCmd = &cobra.Command{
 
 Examples:
   # Backup to OSS
-  mysql-backup-helper backup --host 127.0.0.1 --user root --to-oss
+  mysql-backup-helper backup --host 127.0.0.1 --user root --mode oss
 
   # Backup and stream via TCP on port 9000
-  mysql-backup-helper backup --host 127.0.0.1 --user root --to-stream 9000
+  mysql-backup-helper backup --host 127.0.0.1 --user root --mode stream --stream-port 9000
 
   # Backup with compression and bandwidth limit
   mysql-backup-helper backup --host 127.0.0.1 --user root \
-    --compress-type zstd --io-limit 50MB/s --to-oss`,
+    --compress-type zstd --io-limit 50MB/s --mode oss`,
 	RunE: runBackup,
 }
 
@@ -63,22 +59,18 @@ func init() {
 	backupCmd.Flags().StringVar(&backupPassword, "password", "", "MySQL password (prompt if empty)")
 
 	// Destination flags
-	backupCmd.Flags().BoolVar(&backupToOSS, "to-oss", false, "Upload to Alibaba Cloud OSS")
-	backupCmd.Flags().IntVar(&backupToStream, "to-stream", -1, "Stream via TCP (0=auto-find port)")
+	backupCmd.Flags().StringVar(&backupMode, "mode", "", "Backup mode: oss or stream (default: oss)")
+	backupCmd.Flags().IntVar(&backupStreamPort, "stream-port", 0, "Stream port for TCP (0=auto-find port, only used when mode=stream)")
 
 	// Compression flags
 	backupCmd.Flags().StringVar(&backupCompressType, "compress-type", "", "Compression: qp, zstd, or none")
 
 	// Performance flags
-	backupCmd.Flags().StringVar(&backupEstimatedSize, "estimated-size", "", "Estimated backup size (e.g., '10GB')")
 	backupCmd.Flags().StringVar(&backupIOLimit, "io-limit", "", "IO bandwidth limit (e.g., '100MB/s', -1=unlimited)")
 
-	// Stream flags
-	backupCmd.Flags().BoolVar(&backupEnableHandshake, "enable-handshake", false, "Enable handshake authentication")
-	backupCmd.Flags().StringVar(&backupStreamKey, "stream-key", "", "Handshake key for authentication")
-
-	// Diagnostic flags
-	backupCmd.Flags().StringVar(&backupAIDiagnose, "ai-diagnose", "", "AI diagnosis: on, off, or auto (default: auto)")
+	// Authentication flags
+	backupCmd.Flags().BoolVar(&backupEnableAuth, "enable-auth", false, "Enable stream authentication")
+	backupCmd.Flags().StringVar(&backupAuthKey, "auth-key", "", "Authentication key for stream transfer")
 }
 
 func runBackup(cmd *cobra.Command, args []string) error {
@@ -101,16 +93,16 @@ func runBackup(cmd *cobra.Command, args []string) error {
 		backupCompressType = cfg.CompressType
 	}
 
-	// Determine mode based on flags
-	mode, streamPort := determineMode(backupToOSS, backupToStream)
-	if mode == "stream" && streamPort == 0 && cfg.StreamPort > 0 {
-		streamPort = cfg.StreamPort
+	// Determine mode from flag or default to oss
+	mode := backupMode
+	if mode == "" {
+		mode = "oss"
 	}
 
-	// Parse estimated size using common function
-	estimatedSize, err := parseEstimatedSize(backupEstimatedSize, cfg.EstimatedSize)
-	if err != nil {
-		return err
+	// Get stream port for stream mode
+	streamPort := backupStreamPort
+	if mode == "stream" && streamPort == 0 && cfg.StreamPort > 0 {
+		streamPort = cfg.StreamPort
 	}
 
 	// Parse IO limit using common function
@@ -150,18 +142,16 @@ func runBackup(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	// Parse handshake settings using common function
-	enableHandshake, streamKey := parseHandshakeSettings(cmd, "enable-handshake", backupEnableHandshake, backupStreamKey, cfg)
+	// Parse authentication settings using common function
+	enableAuth, authKey := parseAuthSettings(cmd, "enable-auth", backupEnableAuth, backupAuthKey, cfg)
 
 	// Create backup service and execute
 	backupService := service.NewBackupService(cfg)
 	opts := &service.BackupOptions{
-		Mode:            mode,
-		StreamPort:      streamPort,
-		EstimatedSize:   estimatedSize,
-		EnableHandshake: enableHandshake,
-		StreamKey:       streamKey,
-		AIDiagnose:      backupAIDiagnose,
+		Mode:       mode,
+		StreamPort: streamPort,
+		EnableAuth: enableAuth,
+		AuthKey:    authKey,
 	}
 
 	return backupService.Execute(opts)

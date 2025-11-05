@@ -4,7 +4,6 @@ import (
 	"backup-helper/internal/config"
 	"backup-helper/internal/domain/backup"
 	"backup-helper/internal/domain/mysql"
-	"backup-helper/internal/infrastructure/ai"
 	"backup-helper/internal/infrastructure/storage/oss"
 	"backup-helper/internal/infrastructure/stream"
 	"backup-helper/internal/pkg/format"
@@ -16,7 +15,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/fatih/color"
 	"github.com/gioco-play/easy-i18n/i18n"
 )
 
@@ -32,12 +30,10 @@ func NewBackupService(cfg *config.Config) *BackupService {
 
 // BackupOptions contains options for backup execution
 type BackupOptions struct {
-	Mode            string // "oss" or "stream"
-	StreamPort      int
-	EstimatedSize   int64
-	EnableHandshake bool
-	StreamKey       string
-	AIDiagnose      string // "on", "off", or "auto"
+	Mode       string // "oss" or "stream"
+	StreamPort int
+	EnableAuth bool
+	AuthKey    string
 }
 
 // Execute performs the complete backup workflow
@@ -61,8 +57,8 @@ func (s *BackupService) Execute(opts *BackupOptions) error {
 		return err
 	}
 
-	// 5. Calculate total size for progress tracking
-	totalSize := s.calculateTotalSize(conn, opts.EstimatedSize)
+	// 5. Calculate total size for progress tracking (auto-detect)
+	totalSize := s.calculateTotalSize(conn)
 
 	// 6. Determine object name for upload
 	fullObjectName := s.determineObjectName(opts.Mode)
@@ -78,7 +74,7 @@ func (s *BackupService) Execute(opts *BackupOptions) error {
 	backup.CloseLogFile(xtraCmd)
 
 	// 9. Validate backup result
-	return s.validateBackupResult(logFileName, opts.AIDiagnose)
+	return s.validateBackupResult(logFileName)
 }
 
 // validateMySQLConnection validates MySQL connection and parameters
@@ -123,13 +119,8 @@ func (s *BackupService) executeXtraBackup() (io.Reader, *exec.Cmd, string, error
 	return executor.Execute()
 }
 
-// calculateTotalSize calculates or estimates total backup size
-func (s *BackupService) calculateTotalSize(conn *mysql.Connection, estimatedSize int64) int64 {
-	if estimatedSize > 0 {
-		i18n.Printf("[backup-helper] Using estimated size: %s\n", format.Bytes(estimatedSize))
-		return estimatedSize
-	}
-
+// calculateTotalSize calculates total backup size by detecting datadir size
+func (s *BackupService) calculateTotalSize(conn *mysql.Connection) int64 {
 	datadir, err := conn.GetDatadir()
 	if err != nil {
 		i18n.Printf("Warning: Could not get datadir, progress tracking will be limited: %v\n", err)
@@ -193,7 +184,7 @@ func (s *BackupService) transferToOSS(reader io.Reader, xtraCmd *exec.Cmd, fullO
 
 // transferToStream streams backup via TCP
 func (s *BackupService) transferToStream(opts *BackupOptions, reader io.Reader, xtraCmd *exec.Cmd, totalSize int64) error {
-	sender := stream.NewSender(opts.StreamPort, opts.EnableHandshake, opts.StreamKey, totalSize)
+	sender := stream.NewSender(opts.StreamPort, opts.EnableAuth, opts.AuthKey, totalSize)
 	tcpWriter, _, closer, _, _, err := sender.Start()
 	if err != nil {
 		return fmt.Errorf("stream server error: %v", err)
@@ -218,8 +209,8 @@ func (s *BackupService) transferToStream(opts *BackupOptions, reader io.Reader, 
 	return nil
 }
 
-// validateBackupResult validates backup completion and handles diagnosis
-func (s *BackupService) validateBackupResult(logFileName string, aiDiagnose string) error {
+// validateBackupResult validates backup completion
+func (s *BackupService) validateBackupResult(logFileName string) error {
 	logContent, err := os.ReadFile(logFileName)
 	if err != nil {
 		return fmt.Errorf("backup log read error")
@@ -228,48 +219,11 @@ func (s *BackupService) validateBackupResult(logFileName string, aiDiagnose stri
 	if !strings.Contains(string(logContent), "completed OK!") {
 		i18n.Printf("Backup failed (no 'completed OK!').\n")
 		i18n.Printf("You can check the backup log file for details: %s\n", logFileName)
-
-		s.handleAIDiagnosis(string(logContent), aiDiagnose)
+		i18n.Printf("\n💡 Tip: Use AI to diagnose the issue:\n")
+		i18n.Printf("   mysql-backup-helper ai --log-file %s\n", logFileName)
 		return fmt.Errorf("backup failed")
 	}
 
 	i18n.Printf("[backup-helper] Backup and upload completed!\n")
 	return nil
-}
-
-// handleAIDiagnosis handles AI diagnosis based on settings
-func (s *BackupService) handleAIDiagnosis(logContent string, aiDiagnose string) {
-	if aiDiagnose == "" {
-		aiDiagnose = "auto"
-	}
-
-	switch aiDiagnose {
-	case "on":
-		if s.cfg.QwenAPIKey == "" {
-			i18n.Printf("Qwen API Key is required for AI diagnosis. Please set it in config.\n")
-			return
-		}
-		s.runAIDiagnosis(logContent)
-	case "off":
-		// do nothing
-	default:
-		var input string
-		i18n.Printf("Would you like to use AI diagnosis? (y/n): ")
-		fmt.Scanln(&input)
-		if input == "y" || input == "Y" || input == "yes" || input == "Yes" {
-			s.runAIDiagnosis(logContent)
-		}
-	}
-}
-
-// runAIDiagnosis runs AI diagnosis on backup log
-func (s *BackupService) runAIDiagnosis(logContent string) {
-	qwenClient := ai.NewQwenClient(s.cfg.QwenAPIKey)
-	aiSuggestion, err := qwenClient.Diagnose(logContent)
-	if err != nil {
-		i18n.Printf("AI diagnosis failed: %v\n", err)
-	} else {
-		fmt.Print(color.YellowString(i18n.Sprintf("AI diagnosis suggestion:\n")))
-		fmt.Println(color.YellowString(aiSuggestion))
-	}
 }

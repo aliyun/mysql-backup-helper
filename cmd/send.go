@@ -13,20 +13,19 @@ var (
 	sendStdin bool
 
 	// Destination flags
-	sendToOSS    bool
-	sendToStream int
+	sendMode       string
+	sendStreamPort int
 
 	// Validation flags
 	sendSkipValidation bool
 	sendValidateOnly   bool
 
 	// Performance flags
-	sendEstimatedSize string
-	sendIOLimit       string
+	sendIOLimit string
 
-	// Stream flags
-	sendEnableHandshake bool
-	sendStreamKey       string
+	// Authentication flags
+	sendEnableAuth bool
+	sendAuthKey    string
 )
 
 // sendCmd represents the send command
@@ -37,13 +36,13 @@ var sendCmd = &cobra.Command{
 
 Examples:
   # Upload existing backup to OSS
-  mysql-backup-helper send --file /path/to/backup.xb --to-oss
+  mysql-backup-helper send --file /path/to/backup.xb --mode oss
 
   # Stream backup file via TCP
-  mysql-backup-helper send --file /path/to/backup.xb --to-stream 9000
+  mysql-backup-helper send --file /path/to/backup.xb --mode stream --stream-port 9000
 
   # Send from stdin (pipe from another command)
-  cat backup.xb | mysql-backup-helper send --stdin --to-oss
+  cat backup.xb | mysql-backup-helper send --stdin --mode oss
 
   # Only validate backup file
   mysql-backup-helper send --file backup.xb --validate-only`,
@@ -58,20 +57,19 @@ func init() {
 	sendCmd.Flags().BoolVar(&sendStdin, "stdin", false, "Read backup from stdin")
 
 	// Destination flags
-	sendCmd.Flags().BoolVar(&sendToOSS, "to-oss", false, "Upload to Alibaba Cloud OSS")
-	sendCmd.Flags().IntVar(&sendToStream, "to-stream", -1, "Stream via TCP (0=auto-find port)")
+	sendCmd.Flags().StringVar(&sendMode, "mode", "", "Transfer mode: oss or stream (default: oss)")
+	sendCmd.Flags().IntVar(&sendStreamPort, "stream-port", 0, "Stream port for TCP (0=auto-find port, only used when mode=stream)")
 
 	// Validation flags
 	sendCmd.Flags().BoolVar(&sendSkipValidation, "skip-validation", false, "Skip backup file validation")
 	sendCmd.Flags().BoolVar(&sendValidateOnly, "validate-only", false, "Only validate, don't transfer")
 
 	// Performance flags
-	sendCmd.Flags().StringVar(&sendEstimatedSize, "estimated-size", "", "Estimated size for progress")
 	sendCmd.Flags().StringVar(&sendIOLimit, "io-limit", "", "IO bandwidth limit (e.g., '100MB/s')")
 
-	// Stream flags
-	sendCmd.Flags().BoolVar(&sendEnableHandshake, "enable-handshake", false, "Enable handshake authentication")
-	sendCmd.Flags().StringVar(&sendStreamKey, "stream-key", "", "Handshake key for authentication")
+	// Authentication flags
+	sendCmd.Flags().BoolVar(&sendEnableAuth, "enable-auth", false, "Enable stream authentication")
+	sendCmd.Flags().StringVar(&sendAuthKey, "auth-key", "", "Authentication key for stream transfer")
 }
 
 func runSend(cmd *cobra.Command, args []string) error {
@@ -89,16 +87,16 @@ func runSend(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("source file required: use --file PATH or --stdin")
 	}
 
-	// Determine mode using common function
-	mode, streamPort := determineMode(sendToOSS, sendToStream)
-	if mode == "stream" && streamPort == 0 && cfg.StreamPort > 0 {
-		streamPort = cfg.StreamPort
+	// Determine mode from flag or default to oss
+	mode := sendMode
+	if mode == "" {
+		mode = "oss"
 	}
 
-	// Parse estimated size using common function
-	estimatedSize, err := parseEstimatedSize(sendEstimatedSize, cfg.EstimatedSize)
-	if err != nil {
-		return err
+	// Get stream port for stream mode
+	streamPort := sendStreamPort
+	if mode == "stream" && streamPort == 0 && cfg.StreamPort > 0 {
+		streamPort = cfg.StreamPort
 	}
 
 	// Parse IO limit using common function
@@ -110,20 +108,19 @@ func runSend(cmd *cobra.Command, args []string) error {
 	// Apply IO limit to config
 	applyIOLimit(cfg, ioLimit)
 
-	// Parse handshake settings using common function
-	enableHandshake, streamKey := parseHandshakeSettings(cmd, "enable-handshake", sendEnableHandshake, sendStreamKey, cfg)
+	// Parse authentication settings using common function
+	enableAuth, authKey := parseAuthSettings(cmd, "enable-auth", sendEnableAuth, sendAuthKey, cfg)
 
 	// Create transfer service and execute
 	transferService := service.NewTransferService(cfg)
 	opts := &service.SendOptions{
-		SourceFile:      existedBackup,
-		Mode:            mode,
-		StreamPort:      streamPort,
-		EstimatedSize:   estimatedSize,
-		SkipValidation:  sendSkipValidation,
-		ValidateOnly:    sendValidateOnly,
-		EnableHandshake: enableHandshake,
-		StreamKey:       streamKey,
+		SourceFile:     existedBackup,
+		Mode:           mode,
+		StreamPort:     streamPort,
+		SkipValidation: sendSkipValidation,
+		ValidateOnly:   sendValidateOnly,
+		EnableAuth:     enableAuth,
+		AuthKey:        authKey,
 	}
 
 	return transferService.Send(opts)

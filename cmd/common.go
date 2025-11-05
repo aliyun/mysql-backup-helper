@@ -65,21 +65,6 @@ func formatBytes(bytes int64) string {
 	return format.Bytes(bytes)
 }
 
-// parseEstimatedSize parses estimated size from flag or config
-func parseEstimatedSize(flagValue string, configValue int64) (int64, error) {
-	if flagValue != "" {
-		parsedSize, err := format.ParseSize(flagValue)
-		if err != nil {
-			return 0, fmt.Errorf("error parsing --estimated-size '%s': %v", flagValue, err)
-		}
-		return parsedSize, nil
-	}
-	if configValue > 0 {
-		return configValue, nil
-	}
-	return 0, nil
-}
-
 // parseIOLimit parses IO limit from flag or config
 func parseIOLimit(flagValue string, configValue int64) (int64, error) {
 	if flagValue != "" {
@@ -104,19 +89,19 @@ func applyIOLimit(cfg *config.Config, ioLimit int64) {
 	}
 }
 
-// parseHandshakeSettings parses handshake settings from flags or config
-func parseHandshakeSettings(cmd *cobra.Command, enableFlagName string, enableFlag bool, keyFlag string, cfg *config.Config) (bool, string) {
-	enableHandshake := enableFlag
+// parseAuthSettings parses authentication settings from flags or config
+func parseAuthSettings(cmd *cobra.Command, enableFlagName string, enableFlag bool, keyFlag string, cfg *config.Config) (bool, string) {
+	enableAuth := enableFlag
 	if !cmd.Flags().Changed(enableFlagName) {
-		enableHandshake = cfg.EnableHandshake
+		enableAuth = cfg.EnableAuth
 	}
 
-	streamKey := keyFlag
-	if streamKey == "" {
-		streamKey = cfg.StreamKey
+	authKey := keyFlag
+	if authKey == "" {
+		authKey = cfg.AuthKey
 	}
 
-	return enableHandshake, streamKey
+	return enableAuth, authKey
 }
 
 // determineMode determines operation mode based on flags

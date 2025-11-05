@@ -27,14 +27,13 @@ func NewTransferService(cfg *config.Config) *TransferService {
 
 // SendOptions contains options for sending files
 type SendOptions struct {
-	SourceFile      string // Path to source file or "-" for stdin
-	Mode            string // "oss" or "stream"
-	StreamPort      int
-	EstimatedSize   int64
-	SkipValidation  bool
-	ValidateOnly    bool
-	EnableHandshake bool
-	StreamKey       string
+	SourceFile     string // Path to source file or "-" for stdin
+	Mode           string // "oss" or "stream"
+	StreamPort     int
+	SkipValidation bool
+	ValidateOnly   bool
+	EnableAuth     bool
+	AuthKey        string
 }
 
 // Send sends an existing backup file to destination
@@ -101,12 +100,9 @@ func (s *TransferService) Send(opts *SendOptions) error {
 	timestamp := time.Now().Format("_20060102150405")
 	fullObjectName := s.cfg.ObjectName + timestamp + objectSuffix
 
-	// 5. Calculate total size
+	// 5. Calculate total size (auto-detect from file)
 	var totalSize int64
-	if opts.EstimatedSize > 0 {
-		totalSize = opts.EstimatedSize
-		i18n.Printf("[backup-helper] Using estimated size: %s\n", format.Bytes(totalSize))
-	} else if opts.SourceFile != "-" {
+	if opts.SourceFile != "-" {
 		totalSize, _ = backup.GetFileSize(opts.SourceFile)
 		if totalSize > 0 {
 			i18n.Printf("[backup-helper] Backup file size: %s\n", format.Bytes(totalSize))
@@ -138,7 +134,7 @@ func (s *TransferService) Send(opts *SendOptions) error {
 			i18n.Printf("[backup-helper] Starting TCP stream server (auto-find available port)...\n")
 		}
 
-		sender := stream.NewSender(opts.StreamPort, opts.EnableHandshake, opts.StreamKey, totalSize)
+		sender := stream.NewSender(opts.StreamPort, opts.EnableAuth, opts.AuthKey, totalSize)
 		tcpWriter, _, closer, _, _, err := sender.Start()
 		if err != nil {
 			return fmt.Errorf("stream server error: %v", err)
@@ -168,11 +164,10 @@ func (s *TransferService) Send(opts *SendOptions) error {
 
 // ReceiveOptions contains options for receiving files
 type ReceiveOptions struct {
-	OutputPath      string // Output file path or "-" for stdout
-	StreamPort      int
-	EstimatedSize   int64
-	EnableHandshake bool
-	StreamKey       string
+	OutputPath string // Output file path or "-" for stdout
+	StreamPort int
+	EnableAuth bool
+	AuthKey    string
 }
 
 // Receive receives backup from TCP stream
@@ -188,8 +183,8 @@ func (s *TransferService) Receive(opts *ReceiveOptions) error {
 		i18n.Fprintf(outputStream, "[backup-helper] IO rate limit set to: %s/s\n", format.Bytes(s.cfg.Traffic))
 	}
 
-	// Start TCP receiver
-	receiver := stream.NewReceiver(opts.StreamPort, opts.EnableHandshake, opts.StreamKey, opts.EstimatedSize)
+	// Start TCP receiver (size will be determined during transfer)
+	receiver := stream.NewReceiver(opts.StreamPort, opts.EnableAuth, opts.AuthKey, 0)
 	streamReader, tracker, closer, _, _, err := receiver.Start()
 	if err != nil {
 		return fmt.Errorf("stream receiver error: %v", err)

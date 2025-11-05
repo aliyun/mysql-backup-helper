@@ -17,12 +17,11 @@ var (
 	receiveStdout bool
 
 	// Performance flags
-	receiveEstimatedSize string
-	receiveIOLimit       string
+	receiveIOLimit string
 
-	// Stream flags
-	receiveEnableHandshake bool
-	receiveStreamKey       string
+	// Authentication flags
+	receiveEnableAuth bool
+	receiveAuthKey    string
 )
 
 // receiveCmd represents the receive command
@@ -41,9 +40,9 @@ Examples:
   # Receive and pipe to another command
   mysql-backup-helper receive --from-stream 9000 --stdout | xbstream -x
 
-  # Receive with handshake authentication
+  # Receive with authentication
   mysql-backup-helper receive --from-stream 9000 \
-    --enable-handshake --stream-key "secret-key"`,
+    --enable-auth --auth-key "secret-key"`,
 	RunE: runReceive,
 }
 
@@ -58,12 +57,11 @@ func init() {
 	receiveCmd.Flags().BoolVar(&receiveStdout, "stdout", false, "Write to stdout")
 
 	// Performance flags
-	receiveCmd.Flags().StringVar(&receiveEstimatedSize, "estimated-size", "", "Estimated size for progress")
 	receiveCmd.Flags().StringVar(&receiveIOLimit, "io-limit", "", "IO bandwidth limit")
 
-	// Stream flags
-	receiveCmd.Flags().BoolVar(&receiveEnableHandshake, "enable-handshake", false, "Enable handshake")
-	receiveCmd.Flags().StringVar(&receiveStreamKey, "stream-key", "", "Handshake key")
+	// Authentication flags
+	receiveCmd.Flags().BoolVar(&receiveEnableAuth, "enable-auth", false, "Enable stream authentication")
+	receiveCmd.Flags().StringVar(&receiveAuthKey, "auth-key", "", "Authentication key for stream transfer")
 }
 
 func runReceive(cmd *cobra.Command, args []string) error {
@@ -75,8 +73,8 @@ func runReceive(cmd *cobra.Command, args []string) error {
 		streamPort = cfg.StreamPort
 	}
 
-	// Parse handshake settings using common function
-	enableHandshake, streamKey := parseHandshakeSettings(cmd, "enable-handshake", receiveEnableHandshake, receiveStreamKey, cfg)
+	// Parse authentication settings using common function
+	enableAuth, authKey := parseAuthSettings(cmd, "enable-auth", receiveEnableAuth, receiveAuthKey, cfg)
 
 	// Determine output path
 	outputPath := receiveOutput
@@ -89,12 +87,6 @@ func runReceive(cmd *cobra.Command, args []string) error {
 	if outputPath == "" {
 		timestamp := time.Now().Format("20060102150405")
 		outputPath = fmt.Sprintf("backup_%s.xb", timestamp)
-	}
-
-	// Parse estimated size using common function
-	estimatedSize, err := parseEstimatedSize(receiveEstimatedSize, cfg.EstimatedSize)
-	if err != nil {
-		return err
 	}
 
 	// Parse IO limit using common function
@@ -116,11 +108,10 @@ func runReceive(cmd *cobra.Command, args []string) error {
 	// Create transfer service and execute
 	transferService := service.NewTransferService(cfg)
 	opts := &service.ReceiveOptions{
-		OutputPath:      outputPath,
-		StreamPort:      streamPort,
-		EstimatedSize:   estimatedSize,
-		EnableHandshake: enableHandshake,
-		StreamKey:       streamKey,
+		OutputPath: outputPath,
+		StreamPort: streamPort,
+		EnableAuth: enableAuth,
+		AuthKey:    authKey,
 	}
 
 	return transferService.Receive(opts)

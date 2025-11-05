@@ -43,8 +43,8 @@ type Config struct {
 	StreamPort int    `json:"streamPort"` // TCP port for streaming
 
 	// Stream authentication
-	EnableHandshake bool   `json:"enableHandshake"`
-	StreamKey       string `json:"streamKey"`
+	EnableAuth bool   `json:"enableAuth"`
+	AuthKey    string `json:"authKey"`
 
 	// Backup file configuration
 	ExistedBackup string `json:"existedBackup"` // Path to existing backup file
@@ -53,8 +53,7 @@ type Config struct {
 	LogDir string `json:"logDir"` // Log directory path
 
 	// Performance configuration
-	EstimatedSize int64 `json:"estimatedSize"` // Estimated backup size in bytes
-	IOLimit       int64 `json:"ioLimit"`       // IO bandwidth limit in bytes/second
+	IOLimit int64 `json:"ioLimit"` // IO bandwidth limit in bytes/second
 
 	// Download configuration
 	DownloadOutput string `json:"downloadOutput"` // Output path for download mode
