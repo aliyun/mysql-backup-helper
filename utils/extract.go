@@ -11,10 +11,10 @@ import (
 
 // ExtractBackupStream handles decompression and extraction of backup stream
 // compressType: "zstd", "qp", or "" (no compression)
-// extractDir: directory to extract files, if empty, just save compressed/uncompressed file
+// targetDir: directory to extract files, if empty, just save compressed/uncompressed file
 // Returns error if extraction fails
-func ExtractBackupStream(reader io.Reader, compressType string, extractDir string, outputPath string) error {
-	if extractDir == "" {
+func ExtractBackupStream(reader io.Reader, compressType string, targetDir string, outputPath string) error {
+	if targetDir == "" {
 		// No extraction requested, just save the stream
 		if compressType == "zstd" {
 			// For zstd, we need to decompress first
@@ -32,14 +32,14 @@ func ExtractBackupStream(reader io.Reader, compressType string, extractDir strin
 
 	// Extraction requested
 	if compressType == "zstd" {
-		return extractZstdStream(reader, extractDir)
+		return extractZstdStream(reader, targetDir)
 	} else if compressType == "qp" {
 		// qpress compression requires saving to file first, then using xtrabackup --decompress
 		// This is because xbstream doesn't support --decompress in stream mode for MySQL 5.7
-		return extractQpressStream(reader, extractDir, outputPath)
+		return extractQpressStream(reader, targetDir, outputPath)
 	} else {
 		// No compression, just extract with xbstream
-		return extractXbstream(reader, extractDir)
+		return extractXbstream(reader, targetDir)
 	}
 }
 
@@ -59,7 +59,7 @@ func saveZstdDecompressed(reader io.Reader, outputPath string) error {
 }
 
 // extractZstdStream decompresses zstd stream and extracts with xbstream
-func extractZstdStream(reader io.Reader, extractDir string) error {
+func extractZstdStream(reader io.Reader, targetDir string) error {
 	// Check dependencies
 	if _, err := exec.LookPath("zstd"); err != nil {
 		return fmt.Errorf("%s", i18n.Sprintf("zstd command not found. Please install zstd: https://github.com/facebook/zstd"))
@@ -69,7 +69,7 @@ func extractZstdStream(reader io.Reader, extractDir string) error {
 	}
 
 	// Create extraction directory
-	if err := os.MkdirAll(extractDir, 0755); err != nil {
+	if err := os.MkdirAll(targetDir, 0755); err != nil {
 		return fmt.Errorf("failed to create extraction directory: %v", err)
 	}
 
@@ -78,7 +78,7 @@ func extractZstdStream(reader io.Reader, extractDir string) error {
 	zstdCmd.Stdin = reader
 	zstdCmd.Stderr = os.Stderr
 
-	xbstreamCmd := exec.Command("xbstream", "-x", "-C", extractDir)
+	xbstreamCmd := exec.Command("xbstream", "-x", "-C", targetDir)
 	xbstreamCmd.Stdin, _ = zstdCmd.StdoutPipe()
 	xbstreamCmd.Stderr = os.Stderr
 	xbstreamCmd.Stdout = os.Stderr
@@ -109,7 +109,7 @@ func extractZstdStream(reader io.Reader, extractDir string) error {
 // extractQpressStream handles qpress-compressed backup stream
 // Note: xbstream doesn't support --decompress in stream mode for MySQL 5.7
 // So we need to save to file first, then extract and decompress
-func extractQpressStream(reader io.Reader, extractDir string, outputPath string) error {
+func extractQpressStream(reader io.Reader, targetDir string, outputPath string) error {
 	// Check dependencies
 	if _, err := exec.LookPath("xbstream"); err != nil {
 		return fmt.Errorf("%s", i18n.Sprintf("xbstream command not found. Please install Percona XtraBackup"))
@@ -135,7 +135,7 @@ func extractQpressStream(reader io.Reader, extractDir string, outputPath string)
 	}
 
 	// Step 2: Extract with xbstream
-	if err := os.MkdirAll(extractDir, 0755); err != nil {
+	if err := os.MkdirAll(targetDir, 0755); err != nil {
 		os.Remove(outputPath)
 		return fmt.Errorf("failed to create extraction directory: %v", err)
 	}
@@ -147,7 +147,7 @@ func extractQpressStream(reader io.Reader, extractDir string, outputPath string)
 	}
 	defer extractFile.Close()
 
-	xbstreamCmd := exec.Command("xbstream", "-x", "-C", extractDir)
+	xbstreamCmd := exec.Command("xbstream", "-x", "-C", targetDir)
 	xbstreamCmd.Stdin = extractFile
 	xbstreamCmd.Stderr = os.Stderr
 	xbstreamCmd.Stdout = os.Stderr
@@ -158,7 +158,7 @@ func extractQpressStream(reader io.Reader, extractDir string, outputPath string)
 	}
 
 	// Step 3: Decompress extracted files using xtrabackup --decompress
-	xtrabackupCmd := exec.Command("xtrabackup", "--decompress", "--target-dir", extractDir)
+	xtrabackupCmd := exec.Command("xtrabackup", "--decompress", "--target-dir", targetDir)
 	xtrabackupCmd.Stderr = os.Stderr
 	xtrabackupCmd.Stdout = os.Stderr
 
@@ -174,19 +174,19 @@ func extractQpressStream(reader io.Reader, extractDir string, outputPath string)
 }
 
 // extractXbstream extracts uncompressed xbstream backup
-func extractXbstream(reader io.Reader, extractDir string) error {
+func extractXbstream(reader io.Reader, targetDir string) error {
 	// Check dependency
 	if _, err := exec.LookPath("xbstream"); err != nil {
 		return fmt.Errorf("%s", i18n.Sprintf("xbstream command not found. Please install Percona XtraBackup"))
 	}
 
 	// Create extraction directory
-	if err := os.MkdirAll(extractDir, 0755); err != nil {
+	if err := os.MkdirAll(targetDir, 0755); err != nil {
 		return fmt.Errorf("failed to create extraction directory: %v", err)
 	}
 
 	// Extract with xbstream
-	xbstreamCmd := exec.Command("xbstream", "-x", "-C", extractDir)
+	xbstreamCmd := exec.Command("xbstream", "-x", "-C", targetDir)
 	xbstreamCmd.Stdin = reader
 	xbstreamCmd.Stderr = os.Stderr
 	xbstreamCmd.Stdout = os.Stderr
@@ -224,4 +224,3 @@ func ExtractBackupStreamToStdout(reader io.Reader, compressType string) (io.Read
 	// Note: qpress cannot be stream-decompressed, so user needs to save file first
 	return reader, nil, nil
 }
-

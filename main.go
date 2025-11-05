@@ -40,12 +40,12 @@ func main() {
 	var ioLimit int64
 	var useSSH bool
 	var remoteOutput string
-	var extractDir string
+	var targetDir string
 
 	flag.BoolVar(&doBackup, "backup", false, "Run xtrabackup and upload to OSS")
 	flag.BoolVar(&doDownload, "download", false, "Download backup from TCP stream (listen on port)")
 	flag.StringVar(&downloadOutput, "output", "", "Output file path for download mode (use '-' for stdout, default: backup_YYYYMMDDHHMMSS.xb)")
-	flag.StringVar(&extractDir, "extract-dir", "", "Directory to extract backup files (only for xbstream extraction, requires --compress-type)")
+	flag.StringVar(&targetDir, "target-dir", "", "Directory to extract backup files (only for xbstream extraction, requires --compress-type)")
 	flag.StringVar(&estimatedSizeStr, "estimated-size", "", "Estimated backup size with unit (e.g., '100MB', '1GB', '500KB') or bytes (for progress tracking)")
 	flag.StringVar(&ioLimitStr, "io-limit", "", "IO bandwidth limit with unit (e.g., '100MB/s', '1GB/s', '500KB/s') or bytes per second. Use -1 for unlimited speed")
 	flag.StringVar(&existedBackup, "existed-backup", "", "Path to existing xtrabackup backup file to upload (use '-' for stdin)")
@@ -186,7 +186,7 @@ func main() {
 		if outputPath == "" && cfg.DownloadOutput != "" {
 			outputPath = cfg.DownloadOutput
 		}
-		if outputPath == "" && extractDir == "" {
+		if outputPath == "" && targetDir == "" {
 			// Default: backup_YYYYMMDDHHMMSS.xb (only if not extracting)
 			timestamp := time.Now().Format("20060102150405")
 			outputPath = fmt.Sprintf("backup_%s.xb", timestamp)
@@ -231,14 +231,14 @@ func main() {
 		}
 
 		// Determine output destination and handle extraction
-		if extractDir != "" {
+		if targetDir != "" {
 			// Extraction mode: decompress and extract
 			if downloadCompressType == "" {
-				i18n.Printf("Error: --extract-dir requires --compress-type to be specified\n")
+				i18n.Printf("Error: --target-dir requires --compress-type to be specified\n")
 				os.Exit(1)
 			}
 			if outputPath == "-" {
-				i18n.Printf("Error: --extract-dir cannot be used with --output -\n")
+				i18n.Printf("Error: --target-dir cannot be used with --output -\n")
 				os.Exit(1)
 			}
 
@@ -249,21 +249,21 @@ func main() {
 			}
 
 			i18n.Printf("[backup-helper] Receiving backup data (compression: %s)...\n", downloadCompressType)
-			i18n.Printf("[backup-helper] Extracting to directory: %s\n", extractDir)
+			i18n.Printf("[backup-helper] Extracting to directory: %s\n", targetDir)
 
-			err := utils.ExtractBackupStream(reader, downloadCompressType, extractDir, outputPath)
+			err := utils.ExtractBackupStream(reader, downloadCompressType, targetDir, outputPath)
 			if err != nil {
 				i18n.Printf("Extraction error: %v\n", err)
 				os.Exit(1)
 			}
-			i18n.Printf("[backup-helper] Extraction completed to: %s\n", extractDir)
+			i18n.Printf("[backup-helper] Extraction completed to: %s\n", targetDir)
 		} else if outputPath == "-" {
 			// Stream to stdout - set tracker to output progress to stderr
 			if tracker != nil {
 				tracker.SetOutputToStderr(true)
 			}
 			i18n.Fprintf(os.Stderr, "[backup-helper] Receiving backup data and streaming to stdout...\n")
-			
+
 			// If compression type is specified and outputting to stdout, handle decompression for piping
 			if downloadCompressType == "zstd" {
 				// Decompress zstd stream for piping to xbstream
@@ -514,8 +514,8 @@ func main() {
 					if err != nil {
 						i18n.Printf("Stream client error: %v\n", err)
 						cmd.Process.Kill()
-				os.Exit(1)
-			}
+						os.Exit(1)
+					}
 				}
 			} else {
 				// Passive connection: listen locally and wait for connection
@@ -527,10 +527,10 @@ func main() {
 				tcpWriter, _, closerFunc, actualPort, localIP, err := utils.StartStreamSender(streamPort, enableHandshake, streamKey, totalSize)
 				_ = actualPort // Port info already displayed in StartStreamSender
 				_ = localIP    // IP info already displayed in StartStreamSender
-			if err != nil {
-				i18n.Printf("Stream server error: %v\n", err)
+				if err != nil {
+					i18n.Printf("Stream server error: %v\n", err)
 					cmd.Process.Kill()
-				os.Exit(1)
+					os.Exit(1)
 				}
 				writer = tcpWriter
 				closer = closerFunc
@@ -742,7 +742,7 @@ func main() {
 				// When using stream-host, port is required
 				if streamPort == 0 && !isFlagPassed("stream-port") {
 					if cfg.StreamPort > 0 {
-				streamPort = cfg.StreamPort
+						streamPort = cfg.StreamPort
 					} else {
 						i18n.Printf("Error: --stream-port is required when using --stream-host\n")
 						os.Exit(1)
@@ -767,17 +767,17 @@ func main() {
 				writer, _, closer, _, err = utils.StartStreamClient(streamHost, streamPort, enableHandshake, streamKey, totalSize)
 				if err != nil {
 					i18n.Printf("Stream client error: %v\n", err)
-				os.Exit(1)
-			}
+					os.Exit(1)
+				}
 			} else {
 				// Passive connection: listen locally and wait for connection
 				// streamPort can be 0 now (auto-find available port)
 				tcpWriter, _, closerFunc, actualPort, localIP, err := utils.StartStreamSender(streamPort, enableHandshake, streamKey, totalSize)
 				_ = actualPort // Port info already displayed in StartStreamSender
 				_ = localIP    // IP info already displayed in StartStreamSender
-			if err != nil {
-				i18n.Printf("Stream server error: %v\n", err)
-				os.Exit(1)
+				if err != nil {
+					i18n.Printf("Stream server error: %v\n", err)
+					os.Exit(1)
 				}
 				writer = tcpWriter
 				closer = closerFunc

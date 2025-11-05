@@ -71,7 +71,7 @@ A high-efficiency MySQL physical backup and OSS upload tool. Supports Percona Xt
 | --download         | Download mode: receive backup data from TCP stream and save      |
 | --output           | Output file path for download mode (use '-' for stdout, default: backup_YYYYMMDDHHMMSS.xb) |
 | --compress-type    | Compression type: `zstd` or `qp` (qpress), used for decompression and extraction in download mode |
-| --extract-dir      | Extraction directory: automatically decompress and extract to specified directory (requires --compress-type) |
+| --target-dir       | Extraction directory: automatically decompress and extract to specified directory (requires --compress-type) |
 | --mode             | Backup mode: `oss` (upload to OSS) or `stream` (push to TCP)     |
 | --stream-port      | Local port for streaming mode (e.g. 9999, 0 = auto-find available port), or remote port when --stream-host is specified |
 | --stream-host      | Remote host IP (e.g., '192.168.1.100'). When specified, actively connects to remote server to push data, similar to `nc host port` |
@@ -261,13 +261,13 @@ cat backup.xb | ./backup-helper --config config.json --existed-backup - --mode=s
 ./backup-helper --download --stream-port 9999 --output - | xbstream -x -C /path/to/extract/dir
 
 # Zstd compressed backup: stream decompress then extract (recommended)
-./backup-helper --download --stream-port 9999 --compress-type zstd --extract-dir /path/to/extract/dir
+./backup-helper --download --stream-port 9999 --compress-type zstd --target-dir /path/to/extract/dir
 
 # Zstd compressed backup: stream to stdout (can be piped to xbstream)
 ./backup-helper --download --stream-port 9999 --compress-type zstd --output - | xbstream -x -C /path/to/extract/dir
 
 # Qpress compressed backup: auto decompress and extract (note: requires saving to file first, no stream decompression)
-./backup-helper --download --stream-port 9999 --compress-type qp --extract-dir /path/to/extract/dir
+./backup-helper --download --stream-port 9999 --compress-type qp --target-dir /path/to/extract/dir
 
 # Save zstd compressed backup (auto decompress)
 ./backup-helper --download --stream-port 9999 --compress-type zstd --output my_backup.xb
@@ -283,17 +283,17 @@ cat backup.xb | ./backup-helper --config config.json --existed-backup - --mode=s
 
 - **Zstd compression (`--compress-type zstd`)**:
   - Supports stream decompression, can directly decompress and extract to directory
-  - When using `--extract-dir`, automatically executes `zstd -d | xbstream -x`
+  - When using `--target-dir`, automatically executes `zstd -d | xbstream -x`
   - When using `--output -`, outputs decompressed stream that can be piped to `xbstream`
 
 - **Qpress compression (`--compress-type qp`)**:
   - **Does not support stream decompression** (xbstream in MySQL 5.7 does not support `--decompress` in stream mode)
-  - When using `--extract-dir`, saves compressed file first, then uses `xbstream -x` to extract, finally uses `xtrabackup --decompress` to decompress
+  - When using `--target-dir`, saves compressed file first, then uses `xbstream -x` to extract, finally uses `xtrabackup --decompress` to decompress
   - When using `--output -`, warns and outputs raw compressed stream
 
 - **Uncompressed backup**:
   - When `--compress-type` is not specified, saves or extracts directly
-  - When using `--extract-dir`, directly uses `xbstream -x` to extract
+  - When using `--target-dir`, directly uses `xbstream -x` to extract
 
 ---
 
