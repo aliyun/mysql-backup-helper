@@ -257,17 +257,43 @@ cat backup.xb | ./backup-helper --config config.json --existed-backup - --mode=s
 # Stream to stdout (can be used with pipes for compression or extraction)
 ./backup-helper --download --stream-port 9999 --output - | zstd -d > backup.xb
 
-# Direct extraction using xbstream
+# Direct extraction using xbstream (uncompressed backup)
 ./backup-helper --download --stream-port 9999 --output - | xbstream -x -C /path/to/extract/dir
 
-# If backup is compressed, decompress first then extract
-./backup-helper --download --stream-port 9999 --output - | xbstream -x -C /path/to/extract/dir --decompress --decompress-threads=4
+# Zstd compressed backup: stream decompress then extract (recommended)
+./backup-helper --download --stream-port 9999 --compress-type zstd --extract-dir /path/to/extract/dir
+
+# Zstd compressed backup: stream to stdout (can be piped to xbstream)
+./backup-helper --download --stream-port 9999 --compress-type zstd --output - | xbstream -x -C /path/to/extract/dir
+
+# Qpress compressed backup: auto decompress and extract (note: requires saving to file first, no stream decompression)
+./backup-helper --download --stream-port 9999 --compress-type qp --extract-dir /path/to/extract/dir
+
+# Save zstd compressed backup (auto decompress)
+./backup-helper --download --stream-port 9999 --compress-type zstd --output my_backup.xb
 
 # Download with rate limiting
 ./backup-helper --download --stream-port 9999 --io-limit 100MB/s
 
 # Download with progress display (requires estimated size)
 ./backup-helper --download --stream-port 9999 --estimated-size 1GB
+```
+
+**Download mode compression type notes:**
+
+- **Zstd compression (`--compress-type zstd`)**:
+  - Supports stream decompression, can directly decompress and extract to directory
+  - When using `--extract-dir`, automatically executes `zstd -d | xbstream -x`
+  - When using `--output -`, outputs decompressed stream that can be piped to `xbstream`
+
+- **Qpress compression (`--compress-type qp`)**:
+  - **Does not support stream decompression** (xbstream in MySQL 5.7 does not support `--decompress` in stream mode)
+  - When using `--extract-dir`, saves compressed file first, then uses `xbstream -x` to extract, finally uses `xtrabackup --decompress` to decompress
+  - When using `--output -`, warns and outputs raw compressed stream
+
+- **Uncompressed backup**:
+  - When `--compress-type` is not specified, saves or extracts directly
+  - When using `--extract-dir`, directly uses `xbstream -x` to extract
 
 ---
 
