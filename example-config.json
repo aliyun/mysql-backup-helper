@@ -16,6 +16,7 @@
   "compressType": "zstd",
   "mode": "oss",
   "streamPort": 9999,
+  "streamHost": "",
   "qwenAPIKey": "your-qwen-api-key",
   "enableHandshake": true,
   "streamKey": "your-secret-key",

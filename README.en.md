@@ -71,7 +71,8 @@ A high-efficiency MySQL physical backup and OSS upload tool. Supports Percona Xt
 | --download         | Download mode: receive backup data from TCP stream and save      |
 | --output           | Output file path for download mode (use '-' for stdout, default: backup_YYYYMMDDHHMMSS.xb) |
 | --mode             | Backup mode: `oss` (upload to OSS) or `stream` (push to TCP)     |
-| --stream-port      | Local port for streaming mode (e.g. 9999, 0 = auto-find available port) |
+| --stream-port      | Local port for streaming mode (e.g. 9999, 0 = auto-find available port), or remote port when --stream-host is specified |
+| --stream-host      | Remote host IP (e.g., '192.168.1.100'). When specified, actively connects to remote server to push data, similar to `nc host port` |
 | --compress         | Enable compression                                               |
 | --compress-type    | Compression type: `qp` (qpress), `zstd`                          |
 | --lang             | Language: `zh` (Chinese) or `en` (English), auto-detect if unset |
@@ -134,6 +135,19 @@ nc 192.168.1.100 54321 > streamed-backup.xb
 
 - **In stream mode, all compression options are ignored; the backup is always sent as a raw physical stream.**
 - **When auto-finding ports, the program automatically obtains and displays the local IP in the output, making remote connections easy.**
+- **Use `--stream-host` to actively push to a remote server; the receiver side uses `--download --stream-port` to listen on the specified port.**
+
+### 5.2. Actively push to remote server
+
+```sh
+# Sender side: actively connect to remote server and push data
+./backup-helper --config config.json --backup --mode=stream --stream-host=192.168.1.100 --stream-port=9999
+
+# Receiver side: listen and receive data on remote server
+./backup-helper --download --stream-port=9999
+```
+
+This achieves similar functionality to `xtrabackup | nc 192.168.1.100 9999`.
 
 ### 6. Parameter check only (no backup)
 
