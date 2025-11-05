@@ -50,6 +50,11 @@ func StartRemoteReceiverViaSSH(
 	// Execute SSH command (rely on system SSH config)
 	cmd := exec.Command("ssh", sshHost, strings.Join(remoteCmd, " "))
 
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
+		return 0, nil, nil, fmt.Errorf("failed to create stdout pipe: %v", err)
+	}
+
 	stderr, err := cmd.StderrPipe()
 	if err != nil {
 		return 0, nil, nil, fmt.Errorf("failed to create stderr pipe: %v", err)
@@ -60,12 +65,25 @@ func StartRemoteReceiverViaSSH(
 	}
 
 	// Parse output to find port (from stderr: "Listening on <IP>:<port>")
-	// StartStreamReceiver outputs to stderr, so we need to read from stderr
 	actualPort, err := parseReceiverPort(stderr, port)
 	if err != nil {
 		cmd.Process.Kill()
 		return 0, nil, nil, fmt.Errorf("failed to parse receiver port: %v", err)
 	}
+
+	// IMPORTANT: Start goroutines to consume stdout/stderr to prevent buffer blocking
+	// After parsing the port, the remote process will continue to output progress info
+	// to stderr. If we don't consume it, the buffer will fill up and block the remote process.
+	go func() {
+		// Discard stdout (remote backup-helper doesn't output to stdout in download mode)
+		io.Copy(io.Discard, stdout)
+	}()
+
+	go func() {
+		// Discard stderr after port parsing (we don't need progress info in SSH mode)
+		// This prevents the stderr buffer from filling up and blocking the remote process
+		io.Copy(io.Discard, stderr)
+	}()
 
 	cleanupFunc := func() error {
 		// Send SIGTERM to remote backup-helper process
