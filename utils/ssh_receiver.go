@@ -47,6 +47,9 @@ func StartRemoteReceiverViaSSH(
 		}
 	}
 
+	// Disable rate limiting on remote receiver, rate limiting is handled on sender side
+	remoteCmd = append(remoteCmd, "--io-limit=-1")
+
 	// Execute SSH command (rely on system SSH config)
 	cmd := exec.Command("ssh", sshHost, strings.Join(remoteCmd, " "))
 
