@@ -1,4 +1,4 @@
-package utils
+package ratelimit
 
 import (
 	"io"
@@ -6,8 +6,8 @@ import (
 	"time"
 )
 
-// RateLimitedWriter wraps an io.Writer with rate limiting
-type RateLimitedWriter struct {
+// Writer wraps an io.Writer with rate limiting
+type Writer struct {
 	writer       io.Writer
 	rateLimit    int64 // bytes per second
 	lastWrite    time.Time
@@ -15,9 +15,9 @@ type RateLimitedWriter struct {
 	mu           sync.Mutex
 }
 
-// NewRateLimitedWriter creates a new rate-limited writer
-func NewRateLimitedWriter(writer io.Writer, rateLimit int64) *RateLimitedWriter {
-	return &RateLimitedWriter{
+// NewWriter creates a new rate-limited writer
+func NewWriter(writer io.Writer, rateLimit int64) *Writer {
+	return &Writer{
 		writer:    writer,
 		rateLimit: rateLimit,
 		lastWrite: time.Now(),
@@ -25,21 +25,21 @@ func NewRateLimitedWriter(writer io.Writer, rateLimit int64) *RateLimitedWriter 
 }
 
 // UpdateRateLimit updates the rate limit dynamically
-func (rlw *RateLimitedWriter) UpdateRateLimit(newLimit int64) {
+func (rlw *Writer) UpdateRateLimit(newLimit int64) {
 	rlw.mu.Lock()
 	rlw.rateLimit = newLimit
 	rlw.mu.Unlock()
 }
 
 // GetCurrentLimit returns the current rate limit
-func (rlw *RateLimitedWriter) GetCurrentLimit() int64 {
+func (rlw *Writer) GetCurrentLimit() int64 {
 	rlw.mu.Lock()
 	defer rlw.mu.Unlock()
 	return rlw.rateLimit
 }
 
 // Write implements io.Writer with rate limiting
-func (rlw *RateLimitedWriter) Write(p []byte) (n int, err error) {
+func (rlw *Writer) Write(p []byte) (n int, err error) {
 	rlw.mu.Lock()
 	rateLimit := rlw.rateLimit
 	rlw.mu.Unlock()
@@ -103,15 +103,15 @@ func (rlw *RateLimitedWriter) Write(p []byte) (n int, err error) {
 }
 
 // Close implements io.Closer - delegates to underlying writer if it's a Closer
-func (rlw *RateLimitedWriter) Close() error {
+func (rlw *Writer) Close() error {
 	if closer, ok := rlw.writer.(io.Closer); ok {
 		return closer.Close()
 	}
 	return nil
 }
 
-// RateLimitedReader wraps an io.Reader with rate limiting
-type RateLimitedReader struct {
+// Reader wraps an io.Reader with rate limiting
+type Reader struct {
 	reader    io.Reader
 	rateLimit int64 // bytes per second
 	lastRead  time.Time
@@ -119,9 +119,9 @@ type RateLimitedReader struct {
 	mu        sync.Mutex
 }
 
-// NewRateLimitedReader creates a new rate-limited reader
-func NewRateLimitedReader(reader io.Reader, rateLimit int64) *RateLimitedReader {
-	return &RateLimitedReader{
+// NewReader creates a new rate-limited reader
+func NewReader(reader io.Reader, rateLimit int64) *Reader {
+	return &Reader{
 		reader:    reader,
 		rateLimit: rateLimit,
 		lastRead:  time.Now(),
@@ -129,7 +129,7 @@ func NewRateLimitedReader(reader io.Reader, rateLimit int64) *RateLimitedReader 
 }
 
 // Read implements io.Reader with rate limiting
-func (rlr *RateLimitedReader) Read(p []byte) (n int, err error) {
+func (rlr *Reader) Read(p []byte) (n int, err error) {
 	rlr.mu.Lock()
 	rateLimit := rlr.rateLimit
 	rlr.mu.Unlock()
@@ -198,7 +198,7 @@ func (rlr *RateLimitedReader) Read(p []byte) (n int, err error) {
 }
 
 // Close implements io.Closer - delegates to underlying reader if it's a Closer
-func (rlr *RateLimitedReader) Close() error {
+func (rlr *Reader) Close() error {
 	if closer, ok := rlr.reader.(io.Closer); ok {
 		return closer.Close()
 	}

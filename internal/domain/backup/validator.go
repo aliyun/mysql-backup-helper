@@ -1,4 +1,4 @@
-package utils
+package backup
 
 import (
 	"bufio"
@@ -8,15 +8,15 @@ import (
 	"github.com/gioco-play/easy-i18n/i18n"
 )
 
-// BackupFileInfo backup file information
-type BackupFileInfo struct {
+// FileInfo backup file information
+type FileInfo struct {
 	IsValid      bool   // whether it's a valid xtrabackup xbstream file
 	ErrorMessage string // error message
 }
 
-// ValidateBackupFile validates if the backup file is a valid xtrabackup xbstream file
-func ValidateBackupFile(filePath string) (*BackupFileInfo, error) {
-	info := &BackupFileInfo{
+// ValidateFile validates if the backup file is a valid xtrabackup xbstream file
+func ValidateFile(filePath string) (*FileInfo, error) {
+	info := &FileInfo{
 		IsValid: false,
 	}
 
@@ -65,8 +65,8 @@ func validateXbstreamFormat(reader *bufio.Reader) bool {
 	return true
 }
 
-// PrintBackupFileValidation prints backup file validation results
-func PrintBackupFileValidation(filePath string, info *BackupFileInfo) {
+// PrintValidation prints backup file validation results
+func PrintValidation(filePath string, info *FileInfo) {
 	i18n.Printf("[backup-helper] Validating backup file: %s\n", filePath)
 
 	if info.IsValid {
@@ -79,10 +79,10 @@ func PrintBackupFileValidation(filePath string, info *BackupFileInfo) {
 	}
 }
 
-// ValidateBackupFileFromStdin validates backup file from stdin
+// ValidateStdin validates backup file from stdin
 // Note: for stdin, we skip validation to avoid data loss
-func ValidateBackupFileFromStdin() (*BackupFileInfo, error) {
-	info := &BackupFileInfo{
+func ValidateStdin() (*FileInfo, error) {
+	info := &FileInfo{
 		IsValid: true, // assume stdin data is valid
 	}
 
@@ -91,8 +91,8 @@ func ValidateBackupFileFromStdin() (*BackupFileInfo, error) {
 	return info, nil
 }
 
-// PrintBackupFileValidationFromStdin prints backup file validation results from stdin
-func PrintBackupFileValidationFromStdin(info *BackupFileInfo) {
+// PrintStdinValidation prints backup file validation results from stdin
+func PrintStdinValidation(info *FileInfo) {
 	i18n.Printf("[backup-helper] Validating backup data from stdin...\n")
 
 	if info.IsValid {

@@ -1,4 +1,4 @@
-package utils
+package i18n
 
 import (
 	"os"
@@ -10,14 +10,13 @@ import (
 	"golang.org/x/text/message"
 )
 
-// InitI18nAuto initializes i18n, registers all translations, and sets the language based on system locale or LANG env.
-func InitI18nAuto() {
+// InitAuto initializes i18n, registers all translations, and sets the language based on system locale or LANG env.
+func InitAuto() {
 	// Register all translations
-	InitEn()
+	registerTranslations()
 
 	// Detect system locale
 	userLocales, _ := locale.GetLocales()
-	// i18n.Printf("Current locale: %s\n", userLocales[0])
 	lang := language.English
 	if len(userLocales) > 0 && strings.HasSuffix(strings.ToUpper(userLocales[0]), "CN") {
 		lang = language.SimplifiedChinese
@@ -30,11 +29,10 @@ func InitI18nAuto() {
 	i18n.SetLang(lang)
 }
 
-// InitEn will init both English and Chinese support, all translations are registered here.
-func InitEn() {
+// registerTranslations registers all English and Chinese translations
+func registerTranslations() {
 	// English section
 	message.SetString(language.English, "Current locale: %s\n", "Current locale: %s\n")
-	// General, parameter check, OSS, interaction, error, AI diagnosis (English)...
 	message.SetString(language.English, "Checking MySQL Server Version...", "Checking MySQL Server Version...")
 	message.SetString(language.English, "Version", "Version")
 	message.SetString(language.English, "maybe incompatible", "maybe incompatible")
@@ -87,8 +85,6 @@ func InitEn() {
 	message.SetString(language.English, "Equivalent command: cat %s | nc -l4 %d", "Equivalent command: cat %s | nc -l4 %d")
 	message.SetString(language.English, "Streaming backup data...", "Streaming backup data...")
 	message.SetString(language.English, "Stream completed!", "Stream completed!")
-
-	// Backup file validation messages (English)
 	message.SetString(language.English, "Validating backup file: %s", "Validating backup file: %s")
 	message.SetString(language.English, "Valid xbstream backup file detected", "Valid xbstream backup file detected")
 	message.SetString(language.English, "Invalid backup file", "Invalid backup file")
@@ -106,7 +102,6 @@ func InitEn() {
 
 	// Chinese section
 	message.SetString(language.SimplifiedChinese, "Current locale: %s\n", "当前语言环境: %s\n")
-	// General, parameter check, OSS, interaction, error, AI diagnosis (Chinese)...
 	message.SetString(language.SimplifiedChinese, "Checking MySQL Server Version...", "检查MySQL版本...")
 	message.SetString(language.SimplifiedChinese, "Version", "版本")
 	message.SetString(language.SimplifiedChinese, "maybe incompatible", "可能无法兼容")
@@ -159,8 +154,6 @@ func InitEn() {
 	message.SetString(language.SimplifiedChinese, "Equivalent command: cat %s | nc -l4 %d", "等价命令: cat %s | nc -l4 %d")
 	message.SetString(language.SimplifiedChinese, "Streaming backup data...", "正在流式传输备份数据...")
 	message.SetString(language.SimplifiedChinese, "Stream completed!", "流式传输完成！")
-
-	// Backup file validation messages (Chinese)
 	message.SetString(language.SimplifiedChinese, "Validating backup file: %s", "正在校验备份文件: %s")
 	message.SetString(language.SimplifiedChinese, "Valid xbstream backup file detected", "检测到有效的xbstream备份文件")
 	message.SetString(language.SimplifiedChinese, "Invalid backup file", "无效的备份文件")

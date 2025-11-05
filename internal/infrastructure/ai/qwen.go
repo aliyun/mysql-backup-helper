@@ -1,4 +1,4 @@
-package utils
+package ai
 
 import (
 	"context"
@@ -9,15 +9,27 @@ import (
 	"github.com/openai/openai-go/option"
 )
 
-// DiagnoseWithAliQwen call qwen-max-latest model to diagnose the log content
-func DiagnoseWithAliQwen(cfg *Config, logContent string) (string, error) {
-	if cfg.QwenAPIKey == "" {
-		return "", errors.New("DashScope API Key is not set in config")
+// QwenClient handles AI diagnosis using Alibaba Cloud Qwen
+type QwenClient struct {
+	apiKey string
+}
+
+// NewQwenClient creates a new Qwen AI client
+func NewQwenClient(apiKey string) *QwenClient {
+	return &QwenClient{apiKey: apiKey}
+}
+
+// Diagnose analyzes log content and provides diagnosis suggestions
+func (c *QwenClient) Diagnose(logContent string) (string, error) {
+	if c.apiKey == "" {
+		return "", errors.New("DashScope API Key is not set")
 	}
+
 	client := openai.NewClient(
-		option.WithAPIKey(cfg.QwenAPIKey),
+		option.WithAPIKey(c.apiKey),
 		option.WithBaseURL("https://dashscope.aliyuncs.com/compatible-mode/v1/"),
 	)
+
 	chatCompletion, err := client.Chat.Completions.New(
 		context.TODO(), openai.ChatCompletionNewParams{
 			Messages: openai.F(

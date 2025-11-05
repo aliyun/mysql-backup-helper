@@ -1,24 +1,13 @@
-package utils
+package backup
 
 import (
-	"database/sql"
-	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 )
 
-// GetDatadirFromMySQL queries MySQL for the datadir path
-func GetDatadirFromMySQL(db *sql.DB) (string, error) {
-	datadir := GetMySQLVariable(db, "datadir")
-	if datadir == "" {
-		return "", fmt.Errorf("failed to get datadir from MySQL")
-	}
-	return datadir, nil
-}
-
-// CalculateBackupSize calculates the size of files that xtrabackup would backup
-func CalculateBackupSize(datadir string) (int64, error) {
+// CalculateDatadirSize calculates the size of files that xtrabackup would backup
+func CalculateDatadirSize(datadir string) (int64, error) {
 	var totalSize int64
 
 	err := filepath.Walk(datadir, func(path string, info os.FileInfo, err error) error {

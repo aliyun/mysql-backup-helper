@@ -1,4 +1,4 @@
-package utils
+package format
 
 import (
 	"fmt"
@@ -10,19 +10,21 @@ import (
 	"github.com/gioco-play/easy-i18n/i18n"
 )
 
-func output(item, msg, suggest string, ok bool) {
+// Output formats and prints a table row with status indicator
+func Output(item, msg, suggest string, ok bool) {
 	tip := color.GreenString("[DONE]")
 	if !ok {
 		tip = color.RedString("[ERROR]")
 	}
 	msg = padding(msg, 60)
 	suggest = padding(suggest, 20)
-	var Output = tm.NewTable(0, 4, 2, ' ', 0)
-	fmt.Fprint(Output, i18n.Sprintf("\t%s\t%s\t%s\t%s", item, msg, suggest, tip))
-	tm.Println(Output)
+	var table = tm.NewTable(0, 4, 2, ' ', 0)
+	fmt.Fprint(table, i18n.Sprintf("\t%s\t%s\t%s\t%s", item, msg, suggest, tip))
+	tm.Println(table)
 	tm.Flush()
 }
 
+// padding adds spaces to ensure consistent column width
 func padding(item string, length int) string {
 	itemLen := utf8.RuneCountInString(item)
 	if itemLen < length {
