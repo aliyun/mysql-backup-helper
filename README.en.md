@@ -38,7 +38,6 @@ A high-efficiency MySQL physical backup and OSS upload tool. Supports Percona Xt
   "mysqlPort": 3306,
   "mysqlUser": "root",
   "mysqlPassword": "your-mysql-password",
-  "compress": true,
   "compressType": "zstd",
   "mode": "oss",
   "streamPort": 9999,
@@ -86,7 +85,7 @@ A high-efficiency MySQL physical backup and OSS upload tool. Supports Percona Xt
 | --download         | Download mode: receive backup data from TCP stream and save      |
 | --output           | Output file path for download mode (use '-' for stdout, default: backup_YYYYMMDDHHMMSS.xb) |
 | --compress          | Compression: `qp` (qpress), `zstd`, or `no` (no compression). Defaults to qp when no value provided. Supported in all modes (oss, stream) |
-| --target-dir       | Extraction directory: automatically decompress and extract to specified directory (requires --compress) |
+| --target-dir       | Extraction directory: automatically decompress (if needed) and extract to specified directory |
 | --mode             | Backup mode: `oss` (upload to OSS) or `stream` (push to TCP)     |
 | --stream-port      | Local port for streaming mode (e.g. 9999, 0 = auto-find available port), or remote port when --stream-host is specified |
 | --stream-host      | Remote host IP (e.g., '192.168.1.100'). When specified, actively connects to remote server to push data, similar to `nc host port` |
@@ -322,7 +321,10 @@ cat backup.xb | ./backup-helper --config config.json --existed-backup - --mode=s
 
 The tool displays real-time progress information during backup upload/download:
 
-- **Real-time Progress**: Shows uploaded/downloaded size, total size, percentage, transfer speed, and duration
+- **Real-time Progress**: Shows uploaded/downloaded size, total size, percentage (when uncompressed), transfer speed, and duration
+  - When compression is enabled, percentage is not shown (because compressed size differs from original size)
+  - When uncompressed: `Progress: 100 MB / 500 MB (20.0%) - 50 MB/s - Duration: 2s`
+  - When compressed: `Progress: 100 MB - 50 MB/s - Duration: 2s`
 - **Final Statistics**: Shows total uploaded/downloaded size, duration, and average speed
 - **Size Calculation**:
   - If `--estimated-size` is provided, uses that value directly (supports units: KB, MB, GB, TB)
@@ -339,7 +341,7 @@ The tool displays real-time progress information during backup upload/download:
   - Use `-1` to completely disable rate limiting (unlimited upload speed)
 - **Config File**: Can set `ioLimit` field in config file (in bytes per second), can be overridden by `--io-limit` command-line argument
 
-Example output:
+Example output (uncompressed):
 ```
 [backup-helper] IO rate limit set to: 100.0 MB/s
 
@@ -349,6 +351,18 @@ Progress: 1.3 GB / 1.5 GB (86.7%) - 99.2 MB/s - Duration: 13.1s
   Total uploaded: 1.5 GB
   Duration: 15s
   Average speed: 102.4 MB/s
+```
+
+Example output (with compression):
+```
+[backup-helper] IO rate limit set to: 100.0 MB/s
+
+Progress: 500 MB - 95.2 MB/s - Duration: 5.2s
+Progress: 800 MB - 96.1 MB/s - Duration: 8.3s
+[backup-helper] Upload completed!
+  Total uploaded: 1.0 GB
+  Duration: 10.5s
+  Average speed: 97.5 MB/s
 ```
 
 ---

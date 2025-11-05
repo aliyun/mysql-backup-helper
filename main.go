@@ -44,7 +44,7 @@ func main() {
 	flag.BoolVar(&doBackup, "backup", false, "Run xtrabackup and upload to OSS")
 	flag.BoolVar(&doDownload, "download", false, "Download backup from TCP stream (listen on port)")
 	flag.StringVar(&downloadOutput, "output", "", "Output file path for download mode (use '-' for stdout, default: backup_YYYYMMDDHHMMSS.xb)")
-	flag.StringVar(&targetDir, "target-dir", "", "Directory to extract backup files (only for xbstream extraction, requires --compress)")
+	flag.StringVar(&targetDir, "target-dir", "", "Directory to extract backup files (for xbstream extraction)")
 	flag.StringVar(&estimatedSizeStr, "estimated-size", "", "Estimated backup size with unit (e.g., '100MB', '1GB', '500KB') or bytes (for progress tracking)")
 	flag.StringVar(&ioLimitStr, "io-limit", "", "IO bandwidth limit with unit (e.g., '100MB/s', '1GB/s', '500KB/s') or bytes per second. Use -1 for unlimited speed")
 	flag.StringVar(&existedBackup, "existed-backup", "", "Path to existing xtrabackup backup file to upload (use '-' for stdin)")
@@ -210,6 +210,12 @@ func main() {
 					os.Exit(1)
 				}
 			}
+		} else if targetDir != "" {
+			// No compression but extraction requested: check xbstream dependency
+			if err := utils.CheckExtractionDependencies(""); err != nil {
+				i18n.Printf("Error: %v\n", err)
+				os.Exit(1)
+			}
 		}
 
 		// Determine output file path
@@ -245,7 +251,8 @@ func main() {
 		}
 
 		// Start TCP receiver
-		receiver, tracker, closer, actualPort, localIP, err := utils.StartStreamReceiver(streamPort, enableHandshake, streamKey, estimatedSize)
+		isCompressed := downloadCompressType != ""
+		receiver, tracker, closer, actualPort, localIP, err := utils.StartStreamReceiver(streamPort, enableHandshake, streamKey, estimatedSize, isCompressed)
 		_ = actualPort // Port info already displayed in StartStreamReceiver
 		_ = localIP    // IP info already displayed in StartStreamReceiver
 		if err != nil {
@@ -264,23 +271,23 @@ func main() {
 
 		// Determine output destination and handle extraction
 		if targetDir != "" {
-			// Extraction mode: decompress and extract
-			if downloadCompressType == "" {
-				i18n.Printf("Error: --target-dir requires --compress to be specified\n")
-				os.Exit(1)
-			}
+			// Extraction mode: decompress (if needed) and extract
 			if outputPath == "-" {
 				i18n.Printf("Error: --target-dir cannot be used with --output -\n")
 				os.Exit(1)
 			}
 
 			// Set default output path if not specified (for qpress temp file)
-			if outputPath == "" {
+			if outputPath == "" && downloadCompressType == "qp" {
 				timestamp := time.Now().Format("20060102150405")
 				outputPath = fmt.Sprintf("backup_%s.xb", timestamp)
 			}
 
-			i18n.Printf("[backup-helper] Receiving backup data (compression: %s)...\n", downloadCompressType)
+			if downloadCompressType != "" {
+				i18n.Printf("[backup-helper] Receiving backup data (compression: %s)...\n", downloadCompressType)
+			} else {
+				i18n.Printf("[backup-helper] Receiving backup data (no compression)...\n")
+			}
 			i18n.Printf("[backup-helper] Extracting to directory: %s\n", targetDir)
 
 			err := utils.ExtractBackupStream(reader, downloadCompressType, targetDir, outputPath)
@@ -457,7 +464,8 @@ func main() {
 		switch mode {
 		case "oss":
 			i18n.Printf("[backup-helper] Uploading to OSS...\n")
-			err = utils.UploadReaderToOSS(cfg, fullObjectName, reader, totalSize)
+			isCompressed := cfg.CompressType != ""
+			err = utils.UploadReaderToOSS(cfg, fullObjectName, reader, totalSize, isCompressed)
 			if err != nil {
 				i18n.Printf("OSS upload error: %v\n", err)
 				cmd.Process.Kill()
@@ -529,8 +537,9 @@ func main() {
 					}
 
 					// Connect to remote receiver
+					isCompressed := cfg.CompressType != ""
 					writer, _, closer, _, err = utils.StartStreamClient(
-						streamHost, streamPort, enableHandshake, streamKey, totalSize)
+						streamHost, streamPort, enableHandshake, streamKey, totalSize, isCompressed)
 					if err != nil {
 						sshCleanup()
 						i18n.Printf("Stream client error: %v\n", err)
@@ -558,8 +567,9 @@ func main() {
 						}
 					}
 
+					isCompressed := cfg.CompressType != ""
 					writer, _, closer, _, err = utils.StartStreamClient(
-						streamHost, streamPort, enableHandshake, streamKey, totalSize)
+						streamHost, streamPort, enableHandshake, streamKey, totalSize, isCompressed)
 					if err != nil {
 						i18n.Printf("Stream client error: %v\n", err)
 						cmd.Process.Kill()
@@ -573,7 +583,7 @@ func main() {
 					streamPort = cfg.StreamPort
 				}
 
-				tcpWriter, _, closerFunc, actualPort, localIP, err := utils.StartStreamSender(streamPort, enableHandshake, streamKey, totalSize)
+				tcpWriter, _, closerFunc, actualPort, localIP, err := utils.StartStreamSender(streamPort, enableHandshake, streamKey, totalSize, cfg.CompressType != "")
 				_ = actualPort // Port info already displayed in StartStreamSender
 				_ = localIP    // IP info already displayed in StartStreamSender
 				if err != nil {
@@ -761,7 +771,8 @@ func main() {
 		switch mode {
 		case "oss":
 			i18n.Printf("[backup-helper] Uploading existing backup to OSS...\n")
-			err := utils.UploadReaderToOSS(cfg, fullObjectName, reader, totalSize)
+			isCompressed := cfg.CompressType != ""
+			err := utils.UploadReaderToOSS(cfg, fullObjectName, reader, totalSize, isCompressed)
 			if err != nil {
 				i18n.Printf("OSS upload error: %v\n", err)
 				os.Exit(1)
@@ -817,7 +828,8 @@ func main() {
 
 			if streamHost != "" {
 				// Active connection: connect to remote server
-				writer, _, closer, _, err = utils.StartStreamClient(streamHost, streamPort, enableHandshake, streamKey, totalSize)
+				isCompressed := cfg.CompressType != ""
+				writer, _, closer, _, err = utils.StartStreamClient(streamHost, streamPort, enableHandshake, streamKey, totalSize, isCompressed)
 				if err != nil {
 					i18n.Printf("Stream client error: %v\n", err)
 					os.Exit(1)
@@ -825,7 +837,7 @@ func main() {
 			} else {
 				// Passive connection: listen locally and wait for connection
 				// streamPort can be 0 now (auto-find available port)
-				tcpWriter, _, closerFunc, actualPort, localIP, err := utils.StartStreamSender(streamPort, enableHandshake, streamKey, totalSize)
+				tcpWriter, _, closerFunc, actualPort, localIP, err := utils.StartStreamSender(streamPort, enableHandshake, streamKey, totalSize, cfg.CompressType != "")
 				_ = actualPort // Port info already displayed in StartStreamSender
 				_ = localIP    // IP info already displayed in StartStreamSender
 				if err != nil {

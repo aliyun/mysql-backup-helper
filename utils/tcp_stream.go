@@ -42,7 +42,7 @@ func GetLocalIP() (string, error) {
 // It accepts connections and returns a WriteCloser for writing data to the remote client.
 // If port is 0, it will automatically find an available port.
 // Returns the actual listening port and local IP for display.
-func StartStreamSender(port int, enableHandshake bool, handshakeKey string, totalSize int64) (io.WriteCloser, *ProgressTracker, func(), int, string, error) {
+func StartStreamSender(port int, enableHandshake bool, handshakeKey string, totalSize int64, isCompressed bool) (io.WriteCloser, *ProgressTracker, func(), int, string, error) {
 	var addr string
 	var actualPort int
 
@@ -74,7 +74,7 @@ func StartStreamSender(port int, enableHandshake bool, handshakeKey string, tota
 	fmt.Printf("[backup-helper] Waiting for remote connection...\n")
 
 	// Create progress tracker
-	tracker := NewProgressTracker(totalSize)
+	tracker := NewProgressTrackerWithCompression(totalSize, isCompressed)
 
 	if !enableHandshake {
 		conn, err := ln.Accept()
@@ -132,7 +132,7 @@ func StartStreamSender(port int, enableHandshake bool, handshakeKey string, tota
 // StartStreamClient connects to a remote TCP server and returns a WriteCloser for pushing data.
 // Similar to `nc host port`, this function actively connects to the remote server.
 // Returns the remote address for display.
-func StartStreamClient(host string, port int, enableHandshake bool, handshakeKey string, totalSize int64) (io.WriteCloser, *ProgressTracker, func(), string, error) {
+func StartStreamClient(host string, port int, enableHandshake bool, handshakeKey string, totalSize int64, isCompressed bool) (io.WriteCloser, *ProgressTracker, func(), string, error) {
 	if host == "" {
 		return nil, nil, nil, "", fmt.Errorf("stream-host cannot be empty")
 	}
@@ -144,7 +144,7 @@ func StartStreamClient(host string, port int, enableHandshake bool, handshakeKey
 	fmt.Printf("[backup-helper] Connecting to %s...\n", addr)
 
 	// Create progress tracker
-	tracker := NewProgressTracker(totalSize)
+	tracker := NewProgressTrackerWithCompression(totalSize, isCompressed)
 
 	conn, err := net.DialTimeout("tcp", addr, 30*time.Second)
 	if err != nil {
@@ -200,7 +200,7 @@ func StartStreamClient(host string, port int, enableHandshake bool, handshakeKey
 // It accepts connections and returns a ReadCloser for reading data from the remote client.
 // If port is 0, it will automatically find an available port.
 // Returns the actual listening port and local IP for display.
-func StartStreamReceiver(port int, enableHandshake bool, handshakeKey string, totalSize int64) (io.ReadCloser, *ProgressTracker, func(), int, string, error) {
+func StartStreamReceiver(port int, enableHandshake bool, handshakeKey string, totalSize int64, isCompressed bool) (io.ReadCloser, *ProgressTracker, func(), int, string, error) {
 	var addr string
 	var actualPort int
 
@@ -233,6 +233,7 @@ func StartStreamReceiver(port int, enableHandshake bool, handshakeKey string, to
 
 	// Create progress tracker for download mode
 	tracker := NewDownloadProgressTracker(totalSize)
+	tracker.isCompressed = isCompressed
 
 	if !enableHandshake {
 		conn, err := ln.Accept()

@@ -23,6 +23,7 @@ type ProgressTracker struct {
 	startOnce      sync.Once
 	mode           string // "upload" or "download"
 	outputToStderr bool   // If true, output progress to stderr instead of stdout
+	isCompressed   bool   // If true, don't show percentage (compression changes size)
 }
 
 // NewProgressTracker creates a new progress tracker
@@ -35,7 +36,15 @@ func NewProgressTracker(totalBytes int64) *ProgressTracker {
 		lastBytes:     0,
 		isComplete:    false,
 		mode:          "upload", // default to upload
+		isCompressed:  false,    // default to not compressed
 	}
+}
+
+// NewProgressTrackerWithCompression creates a new progress tracker with compression flag
+func NewProgressTrackerWithCompression(totalBytes int64, isCompressed bool) *ProgressTracker {
+	pt := NewProgressTracker(totalBytes)
+	pt.isCompressed = isCompressed
+	return pt
 }
 
 // NewDownloadProgressTracker creates a new progress tracker for download mode
@@ -127,7 +136,8 @@ func (pt *ProgressTracker) displayProgress() {
 
 	// Display progress
 	var progressLine string
-	if pt.totalBytes > 0 {
+	if pt.totalBytes > 0 && !pt.isCompressed {
+		// Show percentage only when not compressed
 		percentage := float64(uploaded) * 100.0 / float64(pt.totalBytes)
 		progressLine = fmt.Sprintf("\rProgress: %s / %s (%.1f%%) - %s/s - Duration: %s",
 			FormatBytes(uploaded),
@@ -137,7 +147,7 @@ func (pt *ProgressTracker) displayProgress() {
 			formatDuration(now.Sub(pt.startTime)),
 		)
 	} else {
-		// Unknown total size
+		// Unknown total size or compressed - don't show percentage
 		progressLine = fmt.Sprintf("\rProgress: %s - %s/s - Duration: %s",
 			FormatBytes(uploaded),
 			FormatBytes(int64(speed)),

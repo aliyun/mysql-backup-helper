@@ -27,11 +27,11 @@ func (listener *OssProgressListener) ProgressChanged(event *oss.ProgressEvent) {
 }
 
 // UploadReaderToOSS supports fragmenting upload from io.Reader to OSS, objectName is passed by the caller
-func UploadReaderToOSS(cfg *Config, objectName string, reader io.Reader, totalSize int64) error {
+func UploadReaderToOSS(cfg *Config, objectName string, reader io.Reader, totalSize int64, isCompressed bool) error {
 	var waitSender sync.WaitGroup
 
 	// Create progress tracker
-	tracker := NewProgressTracker(totalSize)
+	tracker := NewProgressTrackerWithCompression(totalSize, isCompressed)
 	defer tracker.Complete()
 
 	client, err := oss.New(cfg.Endpoint, cfg.AccessKeyId, cfg.AccessKeySecret)

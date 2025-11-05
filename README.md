@@ -38,7 +38,6 @@
   "mysqlPort": 3306,
   "mysqlUser": "root",
   "mysqlPassword": "your-mysql-password",
-  "compress": true,
   "compressType": "zstd",
   "mode": "oss",
   "streamPort": 9999,
@@ -85,8 +84,7 @@
 | --backup            | 启动备份流程（否则只做参数检查）                             |
 | --download          | 下载模式：从 TCP 流接收备份数据并保存                       |
 | --output            | 下载模式输出文件路径（使用 '-' 表示输出到 stdout，默认：backup_YYYYMMDDHHMMSS.xb） |
-| --compress          | 压缩：`qp`（qpress）、`zstd` 或 `no`（不压缩）。不带值时默认使用 qp。用于下载模式的解压和解包 |
-| --target-dir        | 解包目录：下载后自动解压和解包到指定目录（需要指定 --compress） |
+| --target-dir        | 解包目录：下载后自动解压（如需要）和解包到指定目录 |
 | --mode              | 备份模式：`oss`（上传到 OSS）或 `stream`（推送到 TCP 端口）  |
 | --stream-port       | 流式推送时监听的本地端口（如 9999，设为 0 则自动查找空闲端口），或指定远程端口（当使用 --stream-host 时） |
 | --stream-host       | 远程主机 IP（如 '192.168.1.100'）。指定后主动连接到远程服务器推送数据，类似 `nc host port` |
@@ -322,7 +320,10 @@ cat backup.xb | ./backup-helper --config config.json --existed-backup - --mode=s
 
 工具会在备份上传过程中实时显示进度信息：
 
-- **实时进度**：显示已上传/已下载大小、总大小、百分比、传输速度和持续时间
+- **实时进度**：显示已上传/已下载大小、总大小、百分比（未压缩时）、传输速度和持续时间
+  - 启用压缩时，不显示百分比（因为压缩后的实际大小与原始大小不一致）
+  - 未压缩时，显示完整进度：`Progress: 100 MB / 500 MB (20.0%) - 50 MB/s - Duration: 2s`
+  - 压缩时，仅显示：`Progress: 100 MB - 50 MB/s - Duration: 2s`
 - **最终统计**：显示总上传/总下载大小、持续时间、平均速度
 - **大小计算**：
   - 如果提供了 `--estimated-size`，直接使用该值（支持单位：KB, MB, GB, TB）
@@ -339,7 +340,7 @@ cat backup.xb | ./backup-helper --config config.json --existed-backup - --mode=s
   - 使用 `-1` 表示完全禁用限速（不限速上传）
 - **配置文件**：可以在配置文件中设置 `ioLimit` 字段（单位：字节/秒），支持使用 `--io-limit` 命令行参数覆盖
 
-示例输出：
+示例输出（未压缩）：
 ```
 [backup-helper] IO rate limit set to: 100.0 MB/s
 
@@ -349,6 +350,18 @@ Progress: 1.3 GB / 1.5 GB (86.7%) - 99.2 MB/s - Duration: 13.1s
   Total uploaded: 1.5 GB
   Duration: 15s
   Average speed: 102.4 MB/s
+```
+
+示例输出（启用压缩）：
+```
+[backup-helper] IO rate limit set to: 100.0 MB/s
+
+Progress: 500 MB - 95.2 MB/s - Duration: 5.2s
+Progress: 800 MB - 96.1 MB/s - Duration: 8.3s
+[backup-helper] Upload completed!
+  Total uploaded: 1.0 GB
+  Duration: 10.5s
+  Average speed: 97.5 MB/s
 ```
 
 ---
