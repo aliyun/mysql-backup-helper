@@ -23,6 +23,7 @@ type Config struct {
 	CompressType    string  `json:"compressType"`
 	Mode            string  `json:"mode"`
 	StreamPort      int     `json:"streamPort"`
+	StreamHost      string  `json:"streamHost"`
 	MysqlVersion    Version `json:"mysqlVersion"`
 	QwenAPIKey      string  `json:"qwenAPIKey"`
 	EnableHandshake bool    `json:"enableHandshake"`

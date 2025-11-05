@@ -24,6 +24,7 @@ func main() {
 	var host, user, password string
 	var port int
 	var streamPort int
+	var streamHost string
 	var mode string
 	var compressType string
 	var langFlag string
@@ -51,7 +52,8 @@ func main() {
 	flag.IntVar(&port, "port", 0, "Port number to use for connection")
 	flag.StringVar(&user, "user", "", "User for login")
 	flag.StringVar(&password, "password", "", "Password to use when connecting to server. If password is not given it's asked from the tty.")
-	flag.IntVar(&streamPort, "stream-port", 0, "Local TCP port for streaming (0 = auto-find available port)")
+	flag.IntVar(&streamPort, "stream-port", 0, "Local TCP port for streaming (0 = auto-find available port), or remote port when --stream-host is specified")
+	flag.StringVar(&streamHost, "stream-host", "", "Remote host IP for pushing data (e.g., '192.168.1.100'). When specified, actively connects to remote instead of listening locally")
 	flag.StringVar(&mode, "mode", "oss", "Backup mode: oss (upload to OSS) or stream (push to TCP port)")
 	flag.StringVar(&compressType, "compress-type", "", "Compress type: qp(qpress)/zstd, priority is higher than config file")
 	flag.StringVar(&langFlag, "lang", "", "Language: zh (Chinese) or en (English), auto-detect if unset")
@@ -551,10 +553,39 @@ func main() {
 			}
 			i18n.Printf("[backup-helper] OSS upload completed!\n")
 		case "stream":
+			// Parse stream-host from command line or config
+			if streamHost == "" && cfg.StreamHost != "" {
+				streamHost = cfg.StreamHost
+			}
+
 			// Only use config value if command line didn't specify and config has non-zero value
-			// streamPort 0 means auto-find available port
-			if streamPort == 0 && !isFlagPassed("stream-port") && cfg.StreamPort > 0 {
-				streamPort = cfg.StreamPort
+			// streamPort 0 means auto-find available port (only when not using stream-host)
+			if streamHost == "" {
+				if streamPort == 0 && !isFlagPassed("stream-port") && cfg.StreamPort > 0 {
+					streamPort = cfg.StreamPort
+				}
+				// Show equivalent command (before starting server, so we show original port)
+				equivalentSource := existedBackup
+				if existedBackup == "-" {
+					equivalentSource = "stdin"
+				}
+				if streamPort > 0 {
+					i18n.Printf("[backup-helper] Starting TCP stream server on port %d...\n", streamPort)
+					i18n.Printf("[backup-helper] Equivalent command: cat %s | nc -l4 %d\n",
+						equivalentSource, streamPort)
+				} else {
+					i18n.Printf("[backup-helper] Starting TCP stream server (auto-find available port)...\n")
+				}
+			} else {
+				// When using stream-host, port is required
+				if streamPort == 0 && !isFlagPassed("stream-port") {
+					if cfg.StreamPort > 0 {
+						streamPort = cfg.StreamPort
+					} else {
+						i18n.Printf("Error: --stream-port is required when using --stream-host\n")
+						os.Exit(1)
+					}
+				}
 			}
 
 			// handshake priority：command line > config > default
@@ -565,40 +596,43 @@ func main() {
 				streamKey = cfg.StreamKey
 			}
 
-			// streamPort can be 0 now (auto-find available port)
-			// Show equivalent command (before starting server, so we show original port)
-			equivalentSource := existedBackup
-			if existedBackup == "-" {
-				equivalentSource = "stdin"
-			}
-			if streamPort > 0 {
-				i18n.Printf("[backup-helper] Starting TCP stream server on port %d...\n", streamPort)
-				i18n.Printf("[backup-helper] Equivalent command: cat %s | nc -l4 %d\n",
-					equivalentSource, streamPort)
-			} else {
-				i18n.Printf("[backup-helper] Starting TCP stream server (auto-find available port)...\n")
-			}
+			var writer io.WriteCloser
+			var closer func()
+			var err error
 
-			tcpWriter, _, closer, actualPort, localIP, err := utils.StartStreamSender(streamPort, enableHandshake, streamKey, totalSize)
-			_ = actualPort // Port info already displayed in StartStreamSender
-			_ = localIP    // IP info already displayed in StartStreamSender
-			if err != nil {
-				i18n.Printf("Stream server error: %v\n", err)
-				os.Exit(1)
+			if streamHost != "" {
+				// Active connection: connect to remote server
+				writer, _, closer, _, err = utils.StartStreamClient(streamHost, streamPort, enableHandshake, streamKey, totalSize)
+				if err != nil {
+					i18n.Printf("Stream client error: %v\n", err)
+					os.Exit(1)
+				}
+			} else {
+				// Passive connection: listen locally and wait for connection
+				// streamPort can be 0 now (auto-find available port)
+				tcpWriter, _, closerFunc, actualPort, localIP, err := utils.StartStreamSender(streamPort, enableHandshake, streamKey, totalSize)
+				_ = actualPort // Port info already displayed in StartStreamSender
+				_ = localIP    // IP info already displayed in StartStreamSender
+				if err != nil {
+					i18n.Printf("Stream server error: %v\n", err)
+					os.Exit(1)
+				}
+				writer = tcpWriter
+				closer = closerFunc
 			}
 			defer closer()
 
 			// Apply rate limiting for stream mode if configured
-			writer := tcpWriter
+			var finalWriter io.WriteCloser = writer
 			if cfg.Traffic > 0 {
-				rateLimitedWriter := utils.NewRateLimitedWriter(tcpWriter, cfg.Traffic)
-				writer = rateLimitedWriter
+				rateLimitedWriter := utils.NewRateLimitedWriter(writer, cfg.Traffic)
+				finalWriter = rateLimitedWriter
 			}
 
 			// Stream the backup data
 			i18n.Printf("[backup-helper] Streaming backup data...\n")
 
-			_, err = io.Copy(writer, reader)
+			_, err = io.Copy(finalWriter, reader)
 			if err != nil {
 				i18n.Printf("TCP stream error: %v\n", err)
 				os.Exit(1)
