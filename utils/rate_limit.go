@@ -6,21 +6,26 @@ import (
 	"time"
 )
 
-// RateLimitedWriter wraps an io.Writer with rate limiting
+// RateLimitedWriter wraps an io.Writer with rate limiting using a proper token bucket
 type RateLimitedWriter struct {
-	writer       io.Writer
-	rateLimit    int64 // bytes per second
-	lastWrite    time.Time
-	bytesWritten int64
-	mu           sync.Mutex
+	writer     io.Writer
+	rateLimit  int64   // bytes per second
+	tokens     float64 // Current tokens in bucket
+	capacity   float64 // Bucket capacity (allow some burst for smoothness)
+	lastUpdate time.Time
+	mu         sync.Mutex
 }
 
 // NewRateLimitedWriter creates a new rate-limited writer
 func NewRateLimitedWriter(writer io.Writer, rateLimit int64) *RateLimitedWriter {
+	// Allow burst up to 2x rate limit for smoothness
+	capacity := float64(rateLimit) * 2
 	return &RateLimitedWriter{
-		writer:    writer,
-		rateLimit: rateLimit,
-		lastWrite: time.Now(),
+		writer:     writer,
+		rateLimit:  rateLimit,
+		tokens:     capacity, // Start with full bucket
+		capacity:   capacity,
+		lastUpdate: time.Now(),
 	}
 }
 
@@ -28,6 +33,11 @@ func NewRateLimitedWriter(writer io.Writer, rateLimit int64) *RateLimitedWriter 
 func (rlw *RateLimitedWriter) UpdateRateLimit(newLimit int64) {
 	rlw.mu.Lock()
 	rlw.rateLimit = newLimit
+	rlw.capacity = float64(newLimit) * 2
+	// Adjust tokens proportionally if needed
+	if rlw.tokens > rlw.capacity {
+		rlw.tokens = rlw.capacity
+	}
 	rlw.mu.Unlock()
 }
 
@@ -49,34 +59,43 @@ func (rlw *RateLimitedWriter) Write(p []byte) (n int, err error) {
 		return rlw.writer.Write(p)
 	}
 
-	// Use token bucket algorithm for rate limiting
 	totalWritten := 0
 	for totalWritten < len(p) {
-		now := time.Now()
 		rlw.mu.Lock()
-		elapsed := now.Sub(rlw.lastWrite).Seconds()
+		now := time.Now()
 
-		// Calculate how many bytes we can write
-		if elapsed > 1.0 {
-			// Reset counter every second
-			rlw.bytesWritten = 0
-			rlw.lastWrite = now
-			elapsed = 0
+		// Refill tokens based on elapsed time
+		elapsed := now.Sub(rlw.lastUpdate).Seconds()
+		if elapsed > 0 {
+			// Add tokens at rateLimit bytes per second
+			rlw.tokens += float64(rateLimit) * elapsed
+			if rlw.tokens > rlw.capacity {
+				rlw.tokens = rlw.capacity
+			}
+			rlw.lastUpdate = now
 		}
 
-		allowedBytes := int64(float64(rateLimit) * elapsed)
-		available := allowedBytes - rlw.bytesWritten
+		// Calculate how many bytes we can write
+		available := int64(rlw.tokens)
+		rlw.mu.Unlock()
 
 		if available <= 0 {
-			// Need to wait
-			waitTime := time.Duration(-float64(available) / float64(rateLimit) * float64(time.Second))
-			rlw.mu.Unlock()
-			time.Sleep(waitTime)
-			rlw.mu.Lock()
-			now = time.Now()
-			rlw.lastWrite = now
-			rlw.bytesWritten = 0
-			available = rateLimit
+			// Need to wait for tokens
+			// Calculate wait time: tokens needed / rate
+			needed := float64(len(p) - totalWritten)
+			if needed > rlw.capacity {
+				needed = rlw.capacity
+			}
+			waitTime := time.Duration((needed - rlw.tokens) / float64(rateLimit) * float64(time.Second))
+			if waitTime > 0 {
+				// Use smaller sleep increments for better precision
+				if waitTime > 100*time.Millisecond {
+					time.Sleep(100 * time.Millisecond)
+				} else {
+					time.Sleep(waitTime)
+				}
+			}
+			continue
 		}
 
 		// Write as much as we can
@@ -85,8 +104,6 @@ func (rlw *RateLimitedWriter) Write(p []byte) (n int, err error) {
 			writeSize = int(available)
 		}
 
-		rlw.mu.Unlock()
-
 		written, writeErr := rlw.writer.Write(p[totalWritten : totalWritten+writeSize])
 		totalWritten += written
 
@@ -94,8 +111,12 @@ func (rlw *RateLimitedWriter) Write(p []byte) (n int, err error) {
 			return totalWritten, writeErr
 		}
 
+		// Consume tokens
 		rlw.mu.Lock()
-		rlw.bytesWritten += int64(written)
+		rlw.tokens -= float64(written)
+		if rlw.tokens < 0 {
+			rlw.tokens = 0
+		}
 		rlw.mu.Unlock()
 	}
 
@@ -110,21 +131,26 @@ func (rlw *RateLimitedWriter) Close() error {
 	return nil
 }
 
-// RateLimitedReader wraps an io.Reader with rate limiting
+// RateLimitedReader wraps an io.Reader with rate limiting using a proper token bucket
 type RateLimitedReader struct {
-	reader    io.Reader
-	rateLimit int64 // bytes per second
-	lastRead  time.Time
-	bytesRead int64
-	mu        sync.Mutex
+	reader     io.Reader
+	rateLimit  int64   // bytes per second
+	tokens     float64 // Current tokens in bucket
+	capacity   float64 // Bucket capacity (allow some burst for smoothness)
+	lastUpdate time.Time
+	mu         sync.Mutex
 }
 
 // NewRateLimitedReader creates a new rate-limited reader
 func NewRateLimitedReader(reader io.Reader, rateLimit int64) *RateLimitedReader {
+	// Allow burst up to 2x rate limit for smoothness
+	capacity := float64(rateLimit) * 2
 	return &RateLimitedReader{
-		reader:    reader,
-		rateLimit: rateLimit,
-		lastRead:  time.Now(),
+		reader:     reader,
+		rateLimit:  rateLimit,
+		tokens:     capacity, // Start with full bucket
+		capacity:   capacity,
+		lastUpdate: time.Now(),
 	}
 }
 
@@ -139,34 +165,43 @@ func (rlr *RateLimitedReader) Read(p []byte) (n int, err error) {
 		return rlr.reader.Read(p)
 	}
 
-	// Use token bucket algorithm for rate limiting
 	totalRead := 0
 	for totalRead < len(p) {
-		now := time.Now()
 		rlr.mu.Lock()
-		elapsed := now.Sub(rlr.lastRead).Seconds()
+		now := time.Now()
 
-		// Calculate how many bytes we can read
-		if elapsed > 1.0 {
-			// Reset counter every second
-			rlr.bytesRead = 0
-			rlr.lastRead = now
-			elapsed = 0
+		// Refill tokens based on elapsed time
+		elapsed := now.Sub(rlr.lastUpdate).Seconds()
+		if elapsed > 0 {
+			// Add tokens at rateLimit bytes per second
+			rlr.tokens += float64(rateLimit) * elapsed
+			if rlr.tokens > rlr.capacity {
+				rlr.tokens = rlr.capacity
+			}
+			rlr.lastUpdate = now
 		}
 
-		allowedBytes := int64(float64(rateLimit) * elapsed)
-		available := allowedBytes - rlr.bytesRead
+		// Calculate how many bytes we can read
+		available := int64(rlr.tokens)
+		rlr.mu.Unlock()
 
 		if available <= 0 {
-			// Need to wait
-			waitTime := time.Duration(-float64(available) / float64(rateLimit) * float64(time.Second))
-			rlr.mu.Unlock()
-			time.Sleep(waitTime)
-			rlr.mu.Lock()
-			now = time.Now()
-			rlr.lastRead = now
-			rlr.bytesRead = 0
-			available = rateLimit
+			// Need to wait for tokens
+			// Calculate wait time: tokens needed / rate
+			needed := float64(len(p) - totalRead)
+			if needed > rlr.capacity {
+				needed = rlr.capacity
+			}
+			waitTime := time.Duration((needed - rlr.tokens) / float64(rateLimit) * float64(time.Second))
+			if waitTime > 0 {
+				// Use smaller sleep increments for better precision
+				if waitTime > 100*time.Millisecond {
+					time.Sleep(100 * time.Millisecond)
+				} else {
+					time.Sleep(waitTime)
+				}
+			}
+			continue
 		}
 
 		// Read as much as we can
@@ -175,8 +210,6 @@ func (rlr *RateLimitedReader) Read(p []byte) (n int, err error) {
 			readSize = int(available)
 		}
 
-		rlr.mu.Unlock()
-
 		read, readErr := rlr.reader.Read(p[totalRead : totalRead+readSize])
 		totalRead += read
 
@@ -184,8 +217,12 @@ func (rlr *RateLimitedReader) Read(p []byte) (n int, err error) {
 			return totalRead, readErr
 		}
 
+		// Consume tokens
 		rlr.mu.Lock()
-		rlr.bytesRead += int64(read)
+		rlr.tokens -= float64(read)
+		if rlr.tokens < 0 {
+			rlr.tokens = 0
+		}
 		rlr.mu.Unlock()
 
 		// If we read less than requested, we're done
