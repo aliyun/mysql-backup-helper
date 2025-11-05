@@ -60,3 +60,17 @@ func (c *Config) SetDefaults() {
 		c.LogDir = "/var/log/mysql-backup-helper"
 	}
 }
+
+// GetRateLimit returns the actual rate limit value for rate limiting
+// -1 means unlimited (returns 0)
+// 0 means use default (returns 200MB/s)
+// > 0 means use the specified value
+func (c *Config) GetRateLimit() int64 {
+	if c.IOLimit == -1 {
+		return 0 // 0 means unlimited for rate limiters
+	}
+	if c.IOLimit == 0 {
+		return 209715200 // Default: 200MB/s
+	}
+	return c.IOLimit
+}

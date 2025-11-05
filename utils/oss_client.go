@@ -27,8 +27,7 @@ func (listener *OssProgressListener) ProgressChanged(event *oss.ProgressEvent) {
 }
 
 // UploadReaderToOSS supports fragmenting upload from io.Reader to OSS, objectName is passed by the caller
-// traffic: rate limit in bytes per second (0 means unlimited)
-func UploadReaderToOSS(cfg *Config, objectName string, reader io.Reader, totalSize int64, traffic int64) error {
+func UploadReaderToOSS(cfg *Config, objectName string, reader io.Reader, totalSize int64) error {
 	var waitSender sync.WaitGroup
 
 	// Create progress tracker
@@ -60,6 +59,7 @@ func UploadReaderToOSS(cfg *Config, objectName string, reader io.Reader, totalSi
 
 	var parts []oss.UploadPart
 	index := 1
+	traffic := cfg.GetRateLimit() // Get actual rate limit value
 	for {
 		p := make([]byte, bufferSize)
 		n, err := io.ReadFull(bufReader, p)

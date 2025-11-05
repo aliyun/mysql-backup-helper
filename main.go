@@ -37,7 +37,6 @@ func main() {
 	var estimatedSizeStr string
 	var estimatedSize int64
 	var ioLimitStr string
-	var ioLimit int64
 	var useSSH bool
 	var remoteOutput string
 	var targetDir string
@@ -139,22 +138,9 @@ func main() {
 			i18n.Printf("Error parsing --io-limit '%s': %v\n", ioLimitStr, err)
 			os.Exit(1)
 		}
-		ioLimit = parsedLimit
-	} else if ioLimit == 0 && cfg.IOLimit > 0 {
-		ioLimit = cfg.IOLimit
+		cfg.IOLimit = parsedLimit
 	}
-
-	// Calculate internal traffic limit based on ioLimit
-	// traffic is an internal variable for rate limiting, not exposed in config
-	var traffic int64
-	if ioLimit == -1 {
-		traffic = 0 // 0 means unlimited
-	} else if ioLimit > 0 {
-		traffic = ioLimit
-	} else {
-		// Default: 200MB/s
-		traffic = 209715200
-	}
+	// cfg.IOLimit now contains: -1 (unlimited), 0 (use default), or >0 (specified value)
 
 	// 4. Handle --download mode
 	if doDownload {
@@ -199,21 +185,21 @@ func main() {
 		// Display IO limit
 		if outputPath == "-" {
 			// Output to stderr when streaming to stdout
-			if ioLimit == -1 {
+			if cfg.IOLimit == -1 {
 				i18n.Fprintf(os.Stderr, "[backup-helper] Rate limiting disabled (unlimited speed)\n")
-			} else if ioLimit > 0 {
-				i18n.Fprintf(os.Stderr, "[backup-helper] IO rate limit set to: %s/s\n", formatBytes(ioLimit))
-			} else if traffic > 0 {
-				i18n.Fprintf(os.Stderr, "[backup-helper] IO rate limit set to: %s/s (default)\n", formatBytes(traffic))
+			} else if cfg.IOLimit > 0 {
+				i18n.Fprintf(os.Stderr, "[backup-helper] IO rate limit set to: %s/s\n", formatBytes(cfg.IOLimit))
+			} else {
+				i18n.Fprintf(os.Stderr, "[backup-helper] IO rate limit set to: %s/s (default)\n", formatBytes(cfg.GetRateLimit()))
 			}
 		} else {
 			// Output to stdout when saving to file
-			if ioLimit == -1 {
+			if cfg.IOLimit == -1 {
 				i18n.Printf("[backup-helper] Rate limiting disabled (unlimited speed)\n")
-			} else if ioLimit > 0 {
-				i18n.Printf("[backup-helper] IO rate limit set to: %s/s\n", formatBytes(ioLimit))
-			} else if traffic > 0 {
-				i18n.Printf("[backup-helper] IO rate limit set to: %s/s (default)\n", formatBytes(traffic))
+			} else if cfg.IOLimit > 0 {
+				i18n.Printf("[backup-helper] IO rate limit set to: %s/s\n", formatBytes(cfg.IOLimit))
+			} else {
+				i18n.Printf("[backup-helper] IO rate limit set to: %s/s (default)\n", formatBytes(cfg.GetRateLimit()))
 			}
 		}
 
@@ -229,8 +215,9 @@ func main() {
 
 		// Apply rate limiting if configured
 		var reader io.Reader = receiver
-		if traffic > 0 {
-			rateLimitedReader := utils.NewRateLimitedReader(receiver, traffic)
+		rateLimit := cfg.GetRateLimit()
+		if rateLimit > 0 {
+			rateLimitedReader := utils.NewRateLimitedReader(receiver, rateLimit)
 			reader = rateLimitedReader
 		}
 
@@ -339,13 +326,13 @@ func main() {
 		utils.Check(options, cfg)
 
 		// Display IO limit after parameter check
-		if ioLimit == -1 {
+		if cfg.IOLimit == -1 {
 			i18n.Printf("[backup-helper] Rate limiting disabled (unlimited speed)\n")
-		} else if ioLimit > 0 {
-			i18n.Printf("[backup-helper] IO rate limit set to: %s/s\n", formatBytes(ioLimit))
-		} else if traffic > 0 {
+		} else if cfg.IOLimit > 0 {
+			i18n.Printf("[backup-helper] IO rate limit set to: %s/s\n", formatBytes(cfg.IOLimit))
+		} else {
 			// Using default rate limit
-			i18n.Printf("[backup-helper] IO rate limit set to: %s/s (default)\n", formatBytes(traffic))
+			i18n.Printf("[backup-helper] IO rate limit set to: %s/s (default)\n", formatBytes(cfg.GetRateLimit()))
 		}
 
 		// Check xtrabackup version (run early)
@@ -412,7 +399,7 @@ func main() {
 		switch mode {
 		case "oss":
 			i18n.Printf("[backup-helper] Uploading to OSS...\n")
-			err = utils.UploadReaderToOSS(cfg, fullObjectName, reader, totalSize, traffic)
+			err = utils.UploadReaderToOSS(cfg, fullObjectName, reader, totalSize)
 			if err != nil {
 				i18n.Printf("OSS upload error: %v\n", err)
 				cmd.Process.Kill()
@@ -543,8 +530,9 @@ func main() {
 
 			// Apply rate limiting for stream mode if configured
 			var finalWriter io.WriteCloser = writer
-			if traffic > 0 {
-				rateLimitedWriter := utils.NewRateLimitedWriter(writer, traffic)
+			rateLimit := cfg.GetRateLimit()
+			if rateLimit > 0 {
+				rateLimitedWriter := utils.NewRateLimitedWriter(writer, rateLimit)
 				finalWriter = rateLimitedWriter
 			}
 
@@ -640,13 +628,13 @@ func main() {
 		}
 
 		// Display IO limit after validation
-		if ioLimit == -1 {
+		if cfg.IOLimit == -1 {
 			i18n.Printf("[backup-helper] Rate limiting disabled (unlimited speed)\n")
-		} else if ioLimit > 0 {
-			i18n.Printf("[backup-helper] IO rate limit set to: %s/s\n", formatBytes(ioLimit))
-		} else if traffic > 0 {
+		} else if cfg.IOLimit > 0 {
+			i18n.Printf("[backup-helper] IO rate limit set to: %s/s\n", formatBytes(cfg.IOLimit))
+		} else {
 			// Using default rate limit
-			i18n.Printf("[backup-helper] IO rate limit set to: %s/s (default)\n", formatBytes(traffic))
+			i18n.Printf("[backup-helper] IO rate limit set to: %s/s (default)\n", formatBytes(cfg.GetRateLimit()))
 		}
 
 		// Get reader from existing backup file or stdin
@@ -712,7 +700,7 @@ func main() {
 		switch mode {
 		case "oss":
 			i18n.Printf("[backup-helper] Uploading existing backup to OSS...\n")
-			err := utils.UploadReaderToOSS(cfg, fullObjectName, reader, totalSize, traffic)
+			err := utils.UploadReaderToOSS(cfg, fullObjectName, reader, totalSize)
 			if err != nil {
 				i18n.Printf("OSS upload error: %v\n", err)
 				os.Exit(1)
@@ -790,8 +778,9 @@ func main() {
 
 			// Apply rate limiting for stream mode if configured
 			var finalWriter io.WriteCloser = writer
-			if traffic > 0 {
-				rateLimitedWriter := utils.NewRateLimitedWriter(writer, traffic)
+			rateLimit := cfg.GetRateLimit()
+			if rateLimit > 0 {
+				rateLimitedWriter := utils.NewRateLimitedWriter(writer, rateLimit)
 				finalWriter = rateLimitedWriter
 			}
 
