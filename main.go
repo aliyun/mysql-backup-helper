@@ -712,7 +712,7 @@ func main() {
 		switch mode {
 		case "oss":
 			i18n.Printf("[backup-helper] Uploading existing backup to OSS...\n")
-			err := utils.UploadReaderToOSS(cfg, fullObjectName, reader, totalSize)
+			err := utils.UploadReaderToOSS(cfg, fullObjectName, reader, totalSize, traffic)
 			if err != nil {
 				i18n.Printf("OSS upload error: %v\n", err)
 				os.Exit(1)
