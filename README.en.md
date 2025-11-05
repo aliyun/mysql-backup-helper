@@ -40,20 +40,36 @@ A high-efficiency MySQL physical backup and OSS upload tool. Supports Percona Xt
   "mysqlUser": "root",
   "mysqlPassword": "your-mysql-password",
   "compress": true,
+  "compressType": "zstd",
   "mode": "oss",
   "streamPort": 9999,
+  "streamHost": "",
+  "mysqlVersion": {
+    "major": 5,
+    "minor": 7,
+    "patch": 0
+  },
+  "qwenAPIKey": "your-qwen-api-key",
   "enableHandshake": false,
   "streamKey": "your-secret-key",
   "existedBackup": "",
   "logDir": "/var/log/mysql-backup-helper",
   "estimatedSize": 0,
-  "ioLimit": 0
+  "ioLimit": 0,
+  "downloadOutput": "",
+  "remoteOutput": ""
 }
 ```
 
 - **objectName**: Only specify the prefix. The final OSS object will be `objectName_YYYYMMDDHHMM<suffix>`, e.g. `backup/your-backup_202507181648.xb.zst`
+- **compressType**: Compression type, options: `zstd`, `qp` (qpress), or empty string (no compression)
+- **streamPort**: Streaming port, set to `0` to auto-find available port
+- **streamHost**: Remote host IP for active push mode
 - **existedBackup**: Path to existing backup file for upload or streaming (use '-' for stdin)
 - **logDir**: Log file storage directory, defaults to `/var/log/mysql-backup-helper`, supports both relative and absolute paths
+- **downloadOutput**: Default output path for download mode
+- **remoteOutput**: Remote save path for SSH mode
+- **ioLimit**: IO bandwidth limit (bytes per second), set to `0` to use default (200MB/s), set to `-1` for unlimited speed
 - All config fields can be overridden by command-line arguments. Command-line arguments take precedence over config.
 
 ---

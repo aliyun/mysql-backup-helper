@@ -17,10 +17,16 @@
   "mode": "oss",
   "streamPort": 9999,
   "streamHost": "",
+  "mysqlVersion": {
+    "major": 5,
+    "minor": 7,
+    "patch": 0
+  },
   "qwenAPIKey": "your-qwen-api-key",
-  "enableHandshake": true,
+  "enableHandshake": false,
   "streamKey": "your-secret-key",
-  "existedBackup": "your-existed-backup-file-path",
+  "existedBackup": "",
+  "logDir": "/var/log/mysql-backup-helper",
   "estimatedSize": 0,
   "ioLimit": 0,
   "downloadOutput": "",

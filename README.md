@@ -40,20 +40,36 @@
   "mysqlUser": "root",
   "mysqlPassword": "your-mysql-password",
   "compress": true,
+  "compressType": "zstd",
   "mode": "oss",
   "streamPort": 9999,
+  "streamHost": "",
+  "mysqlVersion": {
+    "major": 5,
+    "minor": 7,
+    "patch": 0
+  },
+  "qwenAPIKey": "your-qwen-api-key",
   "enableHandshake": false,
   "streamKey": "your-secret-key",
   "existedBackup": "",
   "logDir": "/var/log/mysql-backup-helper",
   "estimatedSize": 0,
-  "ioLimit": 0
+  "ioLimit": 0,
+  "downloadOutput": "",
+  "remoteOutput": ""
 }
 ```
 
 - **objectName**：只需指定前缀，最终 OSS 文件名会自动变为 `objectName_YYYYMMDDHHMM后缀`，如 `backup/your-backup_202507181648.xb.zst`
+- **compressType**：压缩类型，可选值：`zstd`、`qp`（qpress）或空字符串（不压缩）
+- **streamPort**：流式传输端口，设为 `0` 表示自动查找可用端口
+- **streamHost**：远程主机 IP，用于主动推送模式
 - **existedBackup**：已存在的备份文件路径，用于上传或流式传输（使用'-'表示从stdin读取）
 - **logDir**：日志文件存储目录，默认为 `/var/log/mysql-backup-helper`，支持相对路径和绝对路径
+- **downloadOutput**：下载模式默认输出路径
+- **remoteOutput**：SSH 模式下远程保存路径
+- **ioLimit**：IO 带宽限制（字节/秒），设为 `0` 使用默认值（200MB/s），设为 `-1` 表示不限速
 - 其它参数可通过命令行覆盖，命令行参数优先于配置文件。
 
 ---
