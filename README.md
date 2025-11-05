@@ -100,49 +100,6 @@
 
 ---
 
-## 🏗️ 代码架构
-
-本项目采用清晰的分层架构设计，遵循 DDD（领域驱动设计）和 Clean Architecture 原则：
-
-```
-mysql-backup-helper/
-├── cmd/                          # 命令行接口层
-│   ├── backup.go                 # backup 子命令
-│   ├── send.go                   # send 子命令
-│   ├── receive.go                # receive 子命令
-│   ├── common.go                 # 公共函数（参数解析、配置合并）
-│   └── root.go                   # 根命令和全局配置
-├── internal/
-│   ├── config/                   # 配置管理
-│   ├── service/                  # 应用服务层（业务编排）
-│   │   ├── backup_service.go    # 备份服务
-│   │   └── transfer_service.go  # 传输服务
-│   ├── domain/                   # 领域层（核心业务逻辑）
-│   │   ├── backup/               # 备份领域
-│   │   └── mysql/                # MySQL 领域
-│   ├── infrastructure/           # 基础设施层
-│   │   ├── ai/                   # AI 诊断（Qwen）
-│   │   ├── storage/oss/          # OSS 存储
-│   │   └── stream/               # TCP 流传输
-│   └── pkg/                      # 通用工具包
-│       ├── errors/               # 统一错误类型
-│       ├── format/               # 格式化工具
-│       ├── i18n/                 # 国际化
-│       ├── progress/             # 进度跟踪
-│       └── ratelimit/            # 速率限制
-└── pkg/version/                  # 版本管理
-```
-
-### 架构特点
-
-- ✅ **分层清晰**：命令层、服务层、领域层、基础设施层职责分明
-- ✅ **依赖注入**：使用构造函数注入，提高可测试性
-- ✅ **关注点分离**：MySQL、备份、传输、存储等逻辑独立封装
-- ✅ **易于扩展**：新增功能只需在对应层级添加代码
-- ✅ **代码复用**：公共函数提取到 `cmd/common.go`，消除重复代码
-
----
-
 ## 📖 命令行使用
 
 ### 全局参数
