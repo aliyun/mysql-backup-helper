@@ -355,11 +355,30 @@ func main() {
 				os.Exit(1)
 			}
 		case "stream":
-			// Only use config value if command line didn't specify and config has non-zero value
-			// streamPort 0 means auto-find available port
-			if streamPort == 0 && !isFlagPassed("stream-port") && cfg.StreamPort > 0 {
-				streamPort = cfg.StreamPort
+			// Parse stream-host from command line or config
+			if streamHost == "" && cfg.StreamHost != "" {
+				streamHost = cfg.StreamHost
 			}
+
+			// Only use config value if command line didn't specify and config has non-zero value
+			// streamPort 0 means auto-find available port (only when not using stream-host)
+			if streamHost == "" {
+				if streamPort == 0 && !isFlagPassed("stream-port") && cfg.StreamPort > 0 {
+					streamPort = cfg.StreamPort
+				}
+			} else {
+				// When using stream-host, port is required
+				if streamPort == 0 && !isFlagPassed("stream-port") {
+					if cfg.StreamPort > 0 {
+						streamPort = cfg.StreamPort
+					} else {
+						i18n.Printf("Error: --stream-port is required when using --stream-host\n")
+						cmd.Process.Kill()
+						os.Exit(1)
+					}
+				}
+			}
+
 			// handshake priority：command line > config > default
 			if !isFlagPassed("enable-handshake") {
 				enableHandshake = cfg.EnableHandshake
@@ -367,24 +386,43 @@ func main() {
 			if streamKey == "" {
 				streamKey = cfg.StreamKey
 			}
-			// streamPort can be 0 now (auto-find available port)
-			tcpWriter, _, closer, actualPort, localIP, err := utils.StartStreamSender(streamPort, enableHandshake, streamKey, totalSize)
-			_ = actualPort // Port info already displayed in StartStreamSender
-			_ = localIP    // IP info already displayed in StartStreamSender
-			if err != nil {
-				i18n.Printf("Stream server error: %v\n", err)
-				os.Exit(1)
+
+			var writer io.WriteCloser
+			var closer func()
+			var err error
+
+			if streamHost != "" {
+				// Active connection: connect to remote server
+				writer, _, closer, _, err = utils.StartStreamClient(streamHost, streamPort, enableHandshake, streamKey, totalSize)
+				if err != nil {
+					i18n.Printf("Stream client error: %v\n", err)
+					cmd.Process.Kill()
+					os.Exit(1)
+				}
+			} else {
+				// Passive connection: listen locally and wait for connection
+				// streamPort can be 0 now (auto-find available port)
+				tcpWriter, _, closerFunc, actualPort, localIP, err := utils.StartStreamSender(streamPort, enableHandshake, streamKey, totalSize)
+				_ = actualPort // Port info already displayed in StartStreamSender
+				_ = localIP    // IP info already displayed in StartStreamSender
+				if err != nil {
+					i18n.Printf("Stream server error: %v\n", err)
+					cmd.Process.Kill()
+					os.Exit(1)
+				}
+				writer = tcpWriter
+				closer = closerFunc
 			}
 			defer closer()
 
 			// Apply rate limiting for stream mode if configured
-			writer := tcpWriter
+			var finalWriter io.WriteCloser = writer
 			if cfg.Traffic > 0 {
-				rateLimitedWriter := utils.NewRateLimitedWriter(tcpWriter, cfg.Traffic)
-				writer = rateLimitedWriter
+				rateLimitedWriter := utils.NewRateLimitedWriter(writer, cfg.Traffic)
+				finalWriter = rateLimitedWriter
 			}
 
-			_, err = io.Copy(writer, reader)
+			_, err = io.Copy(finalWriter, reader)
 			if err != nil {
 				i18n.Printf("TCP stream error: %v\n", err)
 				cmd.Process.Kill()
