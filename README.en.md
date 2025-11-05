@@ -70,6 +70,8 @@ A high-efficiency MySQL physical backup and OSS upload tool. Supports Percona Xt
 | --backup           | Run backup (otherwise only checks parameters)                    |
 | --download         | Download mode: receive backup data from TCP stream and save      |
 | --output           | Output file path for download mode (use '-' for stdout, default: backup_YYYYMMDDHHMMSS.xb) |
+| --compress-type    | Compression type: `zstd` or `qp` (qpress), used for decompression and extraction in download mode |
+| --extract-dir      | Extraction directory: automatically decompress and extract to specified directory (requires --compress-type) |
 | --mode             | Backup mode: `oss` (upload to OSS) or `stream` (push to TCP)     |
 | --stream-port      | Local port for streaming mode (e.g. 9999, 0 = auto-find available port), or remote port when --stream-host is specified |
 | --stream-host      | Remote host IP (e.g., '192.168.1.100'). When specified, actively connects to remote server to push data, similar to `nc host port` |

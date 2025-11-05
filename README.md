@@ -70,6 +70,8 @@
 | --backup            | 启动备份流程（否则只做参数检查）                             |
 | --download          | 下载模式：从 TCP 流接收备份数据并保存                       |
 | --output            | 下载模式输出文件路径（使用 '-' 表示输出到 stdout，默认：backup_YYYYMMDDHHMMSS.xb） |
+| --compress-type     | 压缩类型：`zstd` 或 `qp`（qpress），用于下载模式的解压和解包 |
+| --extract-dir       | 解包目录：下载后自动解压和解包到指定目录（需要指定 --compress-type） |
 | --mode              | 备份模式：`oss`（上传到 OSS）或 `stream`（推送到 TCP 端口）  |
 | --stream-port       | 流式推送时监听的本地端口（如 9999，设为 0 则自动查找空闲端口），或指定远程端口（当使用 --stream-host 时） |
 | --stream-host       | 远程主机 IP（如 '192.168.1.100'）。指定后主动连接到远程服务器推送数据，类似 `nc host port` |
@@ -256,11 +258,20 @@ cat backup.xb | ./backup-helper --config config.json --existed-backup - --mode=s
 # 流式输出到 stdout（可用于管道压缩或解包）
 ./backup-helper --download --stream-port 9999 --output - | zstd -d > backup.xb
 
-# 直接使用 xbstream 解包到目录
+# 直接使用 xbstream 解包到目录（未压缩备份）
 ./backup-helper --download --stream-port 9999 --output - | xbstream -x -C /path/to/extract/dir
 
-# 如果备份是压缩的，需要先解压缩再解包
-./backup-helper --download --stream-port 9999 --output - | xbstream -x -C /path/to/extract/dir --decompress --decompress-threads=4
+# Zstd 压缩备份：流式解压后解包（推荐方式）
+./backup-helper --download --stream-port 9999 --compress-type zstd --extract-dir /path/to/extract/dir
+
+# Zstd 压缩备份：流式输出到 stdout（可用于管道到 xbstream）
+./backup-helper --download --stream-port 9999 --compress-type zstd --output - | xbstream -x -C /path/to/extract/dir
+
+# Qpress 压缩备份：自动解压和解包（注意：需要先保存文件，不支持流式解压）
+./backup-helper --download --stream-port 9999 --compress-type qp --extract-dir /path/to/extract/dir
+
+# 保存 zstd 压缩的备份（自动解压）
+./backup-helper --download --stream-port 9999 --compress-type zstd --output my_backup.xb
 
 # 带限速下载
 ./backup-helper --download --stream-port 9999 --io-limit 100MB/s
@@ -268,6 +279,22 @@ cat backup.xb | ./backup-helper --config config.json --existed-backup - --mode=s
 # 带进度显示（需要提供预估大小）
 ./backup-helper --download --stream-port 9999 --estimated-size 1GB
 ```
+
+**下载模式压缩类型说明：**
+
+- **Zstd 压缩（`--compress-type zstd`）**：
+  - 支持流式解压，可直接解压并解包到目录
+  - 使用 `--extract-dir` 时，自动执行 `zstd -d | xbstream -x`
+  - 使用 `--output -` 时，输出解压后的流，可继续管道到 `xbstream`
+
+- **Qpress 压缩（`--compress-type qp`）**：
+  - **不支持流式解压**（MySQL 5.7 的 xbstream 不支持 `--decompress` 流式操作）
+  - 使用 `--extract-dir` 时，会先保存压缩文件，然后使用 `xbstream -x` 解包，最后使用 `xtrabackup --decompress` 解压
+  - 使用 `--output -` 时，会警告并输出原始压缩流
+
+- **未压缩备份**：
+  - 不指定 `--compress-type` 时，直接保存或解包
+  - 使用 `--extract-dir` 时，直接使用 `xbstream -x` 解包
 
 ---
 
