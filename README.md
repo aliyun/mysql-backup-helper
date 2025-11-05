@@ -337,7 +337,7 @@ cat backup.xb | ./backup-helper --config config.json --existed-backup - --mode=s
   - 支持单位：`KB/s`, `MB/s`, `GB/s`, `TB/s`（如 `100MB/s`, `1GB/s`）
   - 也可以直接使用字节/秒（如 `104857600` 表示 100 MB/s）
   - 使用 `-1` 表示完全禁用限速（不限速上传）
-- **配置文件**：可以在配置文件中设置 `ioLimit` 字段，或使用 `traffic` 字段（单位：字节/秒）
+- **配置文件**：可以在配置文件中设置 `ioLimit` 字段（单位：字节/秒），支持使用 `--io-limit` 命令行参数覆盖
 
 示例输出：
 ```

@@ -336,7 +336,7 @@ The tool displays real-time progress information during backup upload/download:
   - Supports units: `KB/s`, `MB/s`, `GB/s`, `TB/s` (e.g., `100MB/s`, `1GB/s`)
   - Can also use bytes per second directly (e.g., `104857600` for 100 MB/s)
   - Use `-1` to completely disable rate limiting (unlimited upload speed)
-- **Config File**: Can set `ioLimit` field in config file, or use `traffic` field (in bytes per second)
+- **Config File**: Can set `ioLimit` field in config file (in bytes per second), can be overridden by `--io-limit` command-line argument
 
 Example output:
 ```
