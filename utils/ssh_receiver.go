@@ -13,7 +13,7 @@ import (
 
 // StartRemoteReceiverViaSSH starts backup-helper receiver on remote host via SSH
 // If port > 0, uses that port; if port == 0, auto-finds available port
-// Returns the port number where receiver is listening
+// Returns the port number where receiver is listening and the output path
 func StartRemoteReceiverViaSSH(
 	sshHost string,
 	port int, // If > 0, use this port; if 0, auto-find
@@ -21,7 +21,7 @@ func StartRemoteReceiverViaSSH(
 	estimatedSize int64,
 	enableHandshake bool,
 	handshakeKey string,
-) (int, *exec.Cmd, func() error, error) {
+) (int, string, *exec.Cmd, func() error, error) {
 
 	// Build remote backup-helper command
 	remoteCmd := []string{"backup-helper", "--download"}
@@ -52,23 +52,23 @@ func StartRemoteReceiverViaSSH(
 
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
-		return 0, nil, nil, fmt.Errorf("failed to create stdout pipe: %v", err)
+		return 0, "", nil, nil, fmt.Errorf("failed to create stdout pipe: %v", err)
 	}
 
 	stderr, err := cmd.StderrPipe()
 	if err != nil {
-		return 0, nil, nil, fmt.Errorf("failed to create stderr pipe: %v", err)
+		return 0, "", nil, nil, fmt.Errorf("failed to create stderr pipe: %v", err)
 	}
 
 	if err := cmd.Start(); err != nil {
-		return 0, nil, nil, fmt.Errorf("failed to start SSH: %v", err)
+		return 0, "", nil, nil, fmt.Errorf("failed to start SSH: %v", err)
 	}
 
-	// Parse output to find port (from stderr: "Listening on <IP>:<port>")
-	actualPort, err := parseReceiverPort(stderr, port)
+	// Parse output to find port and output path (from stderr)
+	actualPort, outputPath, err := parseReceiverInfo(stderr, port, remoteOutput)
 	if err != nil {
 		cmd.Process.Kill()
-		return 0, nil, nil, fmt.Errorf("failed to parse receiver port: %v", err)
+		return 0, "", nil, nil, fmt.Errorf("failed to parse receiver info: %v", err)
 	}
 
 	// IMPORTANT: Start goroutines to consume stdout/stderr to prevent buffer blocking
@@ -92,13 +92,14 @@ func StartRemoteReceiverViaSSH(
 		return cmd.Process.Kill()
 	}
 
-	return actualPort, cmd, cleanupFunc, nil
+	return actualPort, outputPath, cmd, cleanupFunc, nil
 }
 
-// parseReceiverPort parses the port from backup-helper receiver output
+// parseReceiverInfo parses both port and output path from backup-helper receiver output
 // Looks for: "[backup-helper] Listening on <IP>:<port>"
-// If expectedPort > 0, validates it matches
-func parseReceiverPort(reader io.Reader, expectedPort int) (int, error) {
+// Note: "Saved to: <path>" comes after transfer completes, so we can't parse it here
+// We return the port and use remoteOutput if provided
+func parseReceiverInfo(reader io.Reader, expectedPort int, remoteOutput string) (int, string, error) {
 	scanner := bufio.NewScanner(reader)
 	portPattern := regexp.MustCompile(`Listening on [\d.]+:(\d+)`)
 
@@ -106,29 +107,51 @@ func parseReceiverPort(reader io.Reader, expectedPort int) (int, error) {
 	ticker := time.NewTicker(100 * time.Millisecond)
 	defer ticker.Stop()
 
+	var actualPort int
+
 	for {
 		select {
 		case <-timeout:
-			return 0, fmt.Errorf("timeout waiting for receiver to start")
+			if actualPort == 0 {
+				return 0, "", fmt.Errorf("timeout waiting for receiver to start")
+			}
+			// We got the port, return it with remoteOutput (if provided)
+			return actualPort, remoteOutput, nil
 		case <-ticker.C:
 			if scanner.Scan() {
 				line := scanner.Text()
+				// Parse port
 				if matches := portPattern.FindStringSubmatch(line); matches != nil {
 					if port, err := strconv.Atoi(matches[1]); err == nil {
 						// If expectedPort was specified, validate it matches
 						if expectedPort > 0 && port != expectedPort {
-							return 0, fmt.Errorf("port mismatch: expected %d, got %d", expectedPort, port)
+							return 0, "", fmt.Errorf("port mismatch: expected %d, got %d", expectedPort, port)
 						}
-						return port, nil
+						actualPort = port
+						// Got the port, return immediately
+						return actualPort, remoteOutput, nil
 					}
 				}
 			} else {
 				if err := scanner.Err(); err != nil {
-					return 0, err
+					if actualPort == 0 {
+						return 0, "", err
+					}
+					// We got the port, return it with remoteOutput
+					return actualPort, remoteOutput, nil
 				}
 				// EOF, wait a bit more
 				time.Sleep(200 * time.Millisecond)
 			}
 		}
 	}
+}
+
+// parseReceiverPort parses the port from backup-helper receiver output
+// Looks for: "[backup-helper] Listening on <IP>:<port>"
+// If expectedPort > 0, validates it matches
+// DEPRECATED: Use parseReceiverInfo instead
+func parseReceiverPort(reader io.Reader, expectedPort int) (int, error) {
+	port, _, err := parseReceiverInfo(reader, expectedPort, "")
+	return port, err
 }

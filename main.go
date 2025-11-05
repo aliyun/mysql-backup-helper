@@ -399,7 +399,7 @@ func main() {
 						sshPort = cfg.StreamPort
 					}
 
-					remotePort, _, sshCleanup, err := utils.StartRemoteReceiverViaSSH(
+					remotePort, outputPath, _, sshCleanup, err := utils.StartRemoteReceiverViaSSH(
 						streamHost, sshPort, remoteOutput, totalSize, enableHandshake, streamKey)
 					if err != nil {
 						i18n.Printf("SSH receiver error: %v\n", err)
@@ -412,6 +412,15 @@ func main() {
 						i18n.Printf("[backup-helper] Remote receiver started on port %d via SSH\n", streamPort)
 					} else {
 						i18n.Printf("[backup-helper] Remote receiver started on auto-discovered port %d via SSH\n", streamPort)
+					}
+
+					// Display remote output path (show what was specified, or indicate auto-generated)
+					if outputPath != "" {
+						i18n.Printf("[backup-helper] Remote backup will be saved to: %s\n", outputPath)
+					} else if remoteOutput != "" {
+						i18n.Printf("[backup-helper] Remote backup will be saved to: %s\n", remoteOutput)
+					} else {
+						i18n.Printf("[backup-helper] Remote backup will be saved to: auto-generated path (backup_YYYYMMDDHHMMSS.xb)\n")
 					}
 
 					// Connect to remote receiver
