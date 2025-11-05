@@ -1,7 +1,6 @@
 package cmd
 
 import (
-	"backup-helper/internal/pkg/format"
 	"backup-helper/internal/service"
 	"fmt"
 
@@ -90,59 +89,29 @@ func runSend(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("source file required: use --file PATH or --stdin")
 	}
 
-	// Determine mode
-	mode := "oss"
-	streamPort := 0
-	if sendToStream >= 0 {
-		mode = "stream"
-		streamPort = sendToStream
-		if streamPort == 0 && cfg.StreamPort > 0 {
-			streamPort = cfg.StreamPort
-		}
-	} else if !sendToOSS {
-		sendToOSS = true
+	// Determine mode using common function
+	mode, streamPort := determineMode(sendToOSS, sendToStream)
+	if mode == "stream" && streamPort == 0 && cfg.StreamPort > 0 {
+		streamPort = cfg.StreamPort
 	}
 
-	// Parse estimated size
-	var estimatedSize int64
-	if sendEstimatedSize != "" {
-		parsedSize, err := format.ParseSize(sendEstimatedSize)
-		if err != nil {
-			return fmt.Errorf("error parsing --estimated-size '%s': %v", sendEstimatedSize, err)
-		}
-		estimatedSize = parsedSize
-	} else if cfg.EstimatedSize > 0 {
-		estimatedSize = cfg.EstimatedSize
+	// Parse estimated size using common function
+	estimatedSize, err := parseEstimatedSize(sendEstimatedSize, cfg.EstimatedSize)
+	if err != nil {
+		return err
 	}
 
-	// Parse IO limit
-	var ioLimit int64
-	if sendIOLimit != "" {
-		parsedLimit, err := format.ParseRateLimit(sendIOLimit)
-		if err != nil {
-			return fmt.Errorf("error parsing --io-limit '%s': %v", sendIOLimit, err)
-		}
-		ioLimit = parsedLimit
-	} else if cfg.IOLimit > 0 {
-		ioLimit = cfg.IOLimit
+	// Parse IO limit using common function
+	ioLimit, err := parseIOLimit(sendIOLimit, cfg.IOLimit)
+	if err != nil {
+		return err
 	}
 
-	// Update traffic config
-	if ioLimit == -1 {
-		cfg.Traffic = 0
-	} else if ioLimit > 0 {
-		cfg.Traffic = ioLimit
-	}
+	// Apply IO limit to config
+	applyIOLimit(cfg, ioLimit)
 
-	// Parse handshake settings
-	enableHandshake := sendEnableHandshake
-	if !cmd.Flags().Changed("enable-handshake") {
-		enableHandshake = cfg.EnableHandshake
-	}
-	streamKey := sendStreamKey
-	if streamKey == "" {
-		streamKey = cfg.StreamKey
-	}
+	// Parse handshake settings using common function
+	enableHandshake, streamKey := parseHandshakeSettings(cmd, "enable-handshake", sendEnableHandshake, sendStreamKey, cfg)
 
 	// Create transfer service and execute
 	transferService := service.NewTransferService(cfg)

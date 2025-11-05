@@ -1,6 +1,17 @@
 # MySQL Backup Helper
 
-高效的 MySQL 物理备份与 OSS 上传工具，支持 Percona XtraBackup、阿里云 OSS、流式推送、自动压缩、自动多语言。
+高效的 MySQL 物理备份与传输工具，支持 Percona XtraBackup、阿里云 OSS、TCP 流式传输、自动压缩、AI 诊断、自动多语言。
+
+## ✨ 特性
+
+- 🚀 **高性能备份**：基于 Percona XtraBackup 的物理备份
+- ☁️ **多种传输方式**：支持阿里云 OSS 上传和 TCP 流式传输
+- 🗜️ **智能压缩**：支持 zstd、qpress 压缩算法
+- 🌐 **多语言支持**：自动检测系统语言（中文/英文）
+- 📊 **实时进度**：实时显示备份进度、速度、剩余时间
+- 🔒 **安全传输**：支持 TCP 握手认证
+- 🤖 **AI 诊断**：备份失败时支持 AI 智能诊断（Qwen）
+- ⚡ **带宽控制**：可配置上传/下载速率限制
 
 ---
 
@@ -31,194 +42,371 @@
   "accessKeySecret": "your-access-key-secret",
   "securityToken": "",
   "bucketName": "your-bucket-name",
-  "objectName": "backup/your-backup",   // 只需前缀，实际文件名会自动加时间戳和后缀
+  "objectName": "backup/your-backup",
   "size": 104857600,
   "buffer": 10,
-  "traffic": 209715200,
+  "ioLimit": 209715200,
   "mysqlHost": "127.0.0.1",
   "mysqlPort": 3306,
   "mysqlUser": "root",
   "mysqlPassword": "your-mysql-password",
   "compress": true,
-  "mode": "oss",
+  "compressType": "zstd",
   "streamPort": 9999,
   "enableHandshake": false,
   "streamKey": "your-secret-key",
-  "existedBackup": "",
   "logDir": "/var/log/mysql-backup-helper",
   "estimatedSize": 0,
-  "ioLimit": 0
+  "qwenAPIKey": ""
 }
 ```
 
-- **objectName**：只需指定前缀，最终 OSS 文件名会自动变为 `objectName_YYYYMMDDHHMM后缀`，如 `backup/your-backup_202507181648.xb.zst`
-- **existedBackup**：已存在的备份文件路径，用于上传或流式传输（使用'-'表示从stdin读取）
-- **logDir**：日志文件存储目录，默认为 `/var/log/mysql-backup-helper`，支持相对路径和绝对路径
-- 其它参数可通过命令行覆盖，命令行参数优先于配置文件。
+### 配置字段说明
+
+#### OSS 配置
+- **endpoint**: OSS 端点地址
+- **accessKeyId**: 阿里云 AccessKey ID
+- **accessKeySecret**: 阿里云 AccessKey Secret
+- **bucketName**: OSS 存储桶名称
+- **objectName**: OSS 对象前缀（最终文件名会自动加时间戳和后缀，如 `backup/your-backup_202507181648.xb.zst`）
+
+#### 上传配置
+- **size**: 分片上传大小（字节，默认 100MB）
+- **buffer**: 缓冲区数量（默认 10）
+- **ioLimit**: IO 带宽限制（字节/秒，默认 200MB/s，0表示使用默认值）
+- **traffic**: ⚠️ 已废弃，请使用 `ioLimit` 代替
+
+#### MySQL 配置
+- **mysqlHost**: MySQL 主机地址
+- **mysqlPort**: MySQL 端口（默认 3306）
+- **mysqlUser**: MySQL 用户名
+- **mysqlPassword**: MySQL 密码
+
+#### 压缩配置
+- **compress**: 是否启用压缩（true/false）
+- **compressType**: 压缩类型（zstd、qp 或留空）
+
+#### 流式传输配置
+- **streamPort**: TCP 端口号（0=自动查找空闲端口）
+- **enableHandshake**: 是否启用握手认证（默认 false）
+- **streamKey**: 握手密钥（用于身份验证）
+
+#### 其他配置
+- **logDir**: 日志文件存储目录（默认 `/var/log/mysql-backup-helper`，支持相对/绝对路径）
+- **estimatedSize**: 预估备份大小（字节，用于进度显示）
+- **qwenAPIKey**: Qwen AI API 密钥（用于 AI 诊断功能）
+
+**注意**：命令行参数会覆盖配置文件中的设置。
 
 ---
 
-## 命令行参数
+## 🏗️ 代码架构
 
-| 参数                | 说明                                                         |
-|---------------------|--------------------------------------------------------------|
-| --config            | 配置文件路径（如 `config.json`）                             |
-| --host              | MySQL 主机（优先于配置文件）                                 |
-| --port              | MySQL 端口（优先于配置文件）                                 |
-| --user              | MySQL 用户名（优先于配置文件）                               |
-| --password          | MySQL 密码（优先于配置文件，未指定则交互输入）               |
-| --backup            | 启动备份流程（否则只做参数检查）                             |
-| --download          | 下载模式：从 TCP 流接收备份数据并保存                       |
-| --output            | 下载模式输出文件路径（使用 '-' 表示输出到 stdout，默认：backup_YYYYMMDDHHMMSS.xb） |
-| --mode              | 备份模式：`oss`（上传到 OSS）或 `stream`（推送到 TCP 端口）  |
-| --stream-port       | 流式推送时监听的本地端口（如 9999，设为 0 则自动查找空闲端口） |
-| --compress          | 启用压缩                                                  |
-| --compress-type     | 压缩类型：`qp`（qpress）、`zstd`          |
-| --lang              | 语言：`zh`（中文）或 `en`（英文），不指定则自动检测系统语言   |
-| --ai-diagnose=on/off| 备份失败时 AI 诊断，on 为自动诊断（需配置 Qwen API Key），off 为跳过，未指定时交互式询问 |
-| --enable-handshake   | TCP流推送启用握手认证（默认false，可在配置文件设置）         |
-| --stream-key         | TCP流推送握手密钥（默认空，可在配置文件设置）                |
-| --existed-backup     | 已存在的xtrabackup备份文件路径，用于上传或流式传输（使用'-'表示从stdin读取） |
-| --estimated-size     | 预估备份大小，支持单位（如 '100MB', '1GB'）或字节（用于进度跟踪） |
-| --io-limit           | IO 带宽限制，支持单位（如 '100MB/s', '1GB/s'）或字节/秒，使用 -1 表示不限速 |
-| --version, -v        | 显示版本信息                                                      |
+本项目采用清晰的分层架构设计，遵循 DDD（领域驱动设计）和 Clean Architecture 原则：
+
+```
+mysql-backup-helper/
+├── cmd/                          # 命令行接口层
+│   ├── backup.go                 # backup 子命令
+│   ├── send.go                   # send 子命令
+│   ├── receive.go                # receive 子命令
+│   ├── common.go                 # 公共函数（参数解析、配置合并）
+│   └── root.go                   # 根命令和全局配置
+├── internal/
+│   ├── config/                   # 配置管理
+│   ├── service/                  # 应用服务层（业务编排）
+│   │   ├── backup_service.go    # 备份服务
+│   │   └── transfer_service.go  # 传输服务
+│   ├── domain/                   # 领域层（核心业务逻辑）
+│   │   ├── backup/               # 备份领域
+│   │   └── mysql/                # MySQL 领域
+│   ├── infrastructure/           # 基础设施层
+│   │   ├── ai/                   # AI 诊断（Qwen）
+│   │   ├── storage/oss/          # OSS 存储
+│   │   └── stream/               # TCP 流传输
+│   └── pkg/                      # 通用工具包
+│       ├── errors/               # 统一错误类型
+│       ├── format/               # 格式化工具
+│       ├── i18n/                 # 国际化
+│       ├── progress/             # 进度跟踪
+│       └── ratelimit/            # 速率限制
+└── pkg/version/                  # 版本管理
+```
+
+### 架构特点
+
+- ✅ **分层清晰**：命令层、服务层、领域层、基础设施层职责分明
+- ✅ **依赖注入**：使用构造函数注入，提高可测试性
+- ✅ **关注点分离**：MySQL、备份、传输、存储等逻辑独立封装
+- ✅ **易于扩展**：新增功能只需在对应层级添加代码
+- ✅ **代码复用**：公共函数提取到 `cmd/common.go`，消除重复代码
 
 ---
 
-## 典型用法
+## 📖 命令行使用
+
+### 全局参数
+
+| 参数          | 说明                                           |
+|---------------|------------------------------------------------|
+| --config      | 配置文件路径（可选）                           |
+| --lang        | 语言：zh（中文）或 en（英文），默认自动检测   |
+| --verbose, -v | 详细输出模式                                   |
+| --quiet, -q   | 安静模式（最小输出）                           |
+
+### 子命令
+
+#### 1. `backup` - 执行 MySQL 备份并传输
+
+**用途**：连接 MySQL，执行 xtrabackup 备份，并上传到 OSS 或通过 TCP 流传输。
+
+**参数**：
+
+| 参数                | 说明                                                    |
+|---------------------|--------------------------------------------------------|
+| --host              | MySQL 主机地址                                         |
+| --port              | MySQL 端口（默认 3306）                                |
+| --user              | MySQL 用户名                                           |
+| --password          | MySQL 密码（未指定则交互输入）                         |
+| --to-oss            | 上传到阿里云 OSS                                       |
+| --to-stream         | 通过 TCP 流传输（端口号，0=自动查找）                  |
+| --compress-type     | 压缩类型：zstd、qp 或 none                             |
+| --estimated-size    | 预估备份大小（如 '10GB'）                              |
+| --io-limit          | IO 带宽限制（如 '100MB/s'，-1=不限速）                 |
+| --enable-handshake  | 启用 TCP 握手认证                                      |
+| --stream-key        | TCP 握手密钥                                           |
+| --ai-diagnose       | AI 诊断：on、off 或 auto（默认）                       |
+
+**示例**：
+```bash
+# 备份并上传到 OSS
+backup-helper backup --host 127.0.0.1 --user root --to-oss
+
+# 备份并通过 TCP 流传输
+backup-helper backup --host 127.0.0.1 --user root --to-stream 9000
+
+# 使用 zstd 压缩并限速
+backup-helper backup --host 127.0.0.1 --user root --to-oss \
+  --compress-type zstd --io-limit 100MB/s
+```
+
+#### 2. `send` - 发送已有备份文件
+
+**用途**：将已有的备份文件上传到 OSS 或通过 TCP 流传输。
+
+**参数**：
+
+| 参数                | 说明                                       |
+|---------------------|--------------------------------------------|
+| --file              | 备份文件路径（'-' 表示从 stdin 读取）      |
+| --stdin             | 从 stdin 读取备份数据                      |
+| --to-oss            | 上传到阿里云 OSS                           |
+| --to-stream         | 通过 TCP 流传输（端口号）                  |
+| --skip-validation   | 跳过备份文件验证                           |
+| --validate-only     | 仅验证文件，不传输                         |
+| --estimated-size    | 预估大小（用于进度显示）                   |
+| --io-limit          | IO 带宽限制                                |
+| --enable-handshake  | 启用 TCP 握手认证                          |
+| --stream-key        | TCP 握手密钥                               |
+
+**示例**：
+```bash
+# 上传备份文件到 OSS
+backup-helper send --file backup.xb --to-oss
+
+# 通过 TCP 流传输备份文件
+backup-helper send --file backup.xb --to-stream 9000
+
+# 从 stdin 读取并上传
+cat backup.xb | backup-helper send --stdin --to-oss
+
+# 仅验证备份文件
+backup-helper send --file backup.xb --validate-only
+```
+
+#### 3. `receive` - 接收备份数据
+
+**用途**：从 TCP 流接收备份数据并保存。
+
+**参数**：
+
+| 参数                | 说明                                              |
+|---------------------|---------------------------------------------------|
+| --from-stream       | 监听的 TCP 端口（0=自动查找）                     |
+| --output            | 输出文件路径（'-' 表示输出到 stdout，默认自动生成）|
+| --stdout            | 输出到 stdout                                     |
+| --estimated-size    | 预估大小                                          |
+| --io-limit          | IO 带宽限制                                       |
+| --enable-handshake  | 启用 TCP 握手认证                                 |
+| --stream-key        | TCP 握手密钥                                      |
+
+**示例**：
+```bash
+# 接收备份并保存到文件
+backup-helper receive --from-stream 9000 --output backup.xb
+
+# 接收备份并输出到 stdout（可用于管道）
+backup-helper receive --from-stream 9000 --stdout | xbstream -x
+
+# 自动查找端口
+backup-helper receive --from-stream 0
+```
+
+---
+
+## 🚀 快速开始
 
 ### 1. 编译
 
-```sh
-go build -a -o backup-helper main.go
+```bash
+# 使用 Makefile
+make build
+
+# 或手动编译
+go build -o backup-helper
 ```
 
-### 2. 一键备份并上传 OSS（自动中文/英文）
+### 2. 查看帮助
 
-```sh
-./backup-helper --config config.json --backup --mode=oss
+```bash
+./backup-helper --help
+./backup-helper backup --help
+./backup-helper send --help
+./backup-helper receive --help
 ```
 
-### 3. 指定英文界面
+### 3. 基本用法示例
 
-```sh
-./backup-helper --config config.json --backup --mode=oss --lang=en
+#### 场景 1：备份并上传到 OSS
+
+```bash
+# 使用配置文件
+./backup-helper backup --config config.json --to-oss
+
+# 纯命令行参数
+./backup-helper backup --host 127.0.0.1 --user root --password xxx \
+  --to-oss --compress-type zstd
 ```
 
-### 4. 指定压缩类型
+#### 场景 2：备份并通过 TCP 流传输
 
-```sh
-./backup-helper --config config.json --backup --mode=oss --compress-type=zstd
-./backup-helper --config config.json --backup --mode=oss --compress-type=qp
-./backup-helper --config config.json --backup --mode=oss --compress-type=none
+```bash
+# 发送端（备份端）
+./backup-helper backup --host 127.0.0.1 --user root --to-stream 9000
+
+# 接收端
+./backup-helper receive --from-stream 9000 --output backup.xb
 ```
 
-### 5. 流式推送（stream 模式）
+#### 场景 3：上传已有备份文件
 
-```sh
-./backup-helper --config config.json --backup --mode=stream --stream-port=9999
-# 另一个终端拉流
-nc 127.0.0.1 9999 > streamed-backup.xb
+```bash
+# 上传到 OSS
+./backup-helper send --file backup.xb --to-oss
+
+# 通过 TCP 流传输
+./backup-helper send --file backup.xb --to-stream 9000
 ```
 
-### 5.1. 自动查找空闲端口（推荐）
+---
 
-```sh
-./backup-helper --config config.json --backup --mode=stream --stream-port=0
-# 程序会自动找到空闲端口并显示本地 IP 和端口
-# 输出示例：
-# [backup-helper] Listening on 192.168.1.100:54321
-# [backup-helper] Waiting for remote connection...
-# 另一个终端拉流（使用显示的端口）
-nc 192.168.1.100 54321 > streamed-backup.xb
+## 💡 典型使用场景
+
+### 1. 完整备份工作流（OSS）
+
+```bash
+# 步骤1：执行备份并上传
+./backup-helper backup \
+  --host 127.0.0.1 \
+  --user root \
+  --password yourpassword \
+  --to-oss \
+  --compress-type zstd \
+  --io-limit 100MB/s \
+  --estimated-size 10GB
 ```
 
-- **stream 模式下所有压缩参数均无效，始终为原始物理备份流。**
-- **自动查找端口时会自动获取本地 IP 并显示在输出中，便于远程连接。**
+### 2. 跨网络备份传输（TCP Stream）
 
-### 6. 仅做参数检查（不备份）
+```bash
+# 在目标服务器（接收端）
+./backup-helper receive --from-stream 9000 --output /backup/mysql_backup.xb
 
-```sh
-./backup-helper --config config.json
+# 在源服务器（备份端）
+./backup-helper backup \
+  --host 127.0.0.1 \
+  --user root \
+  --to-stream 9000 \
+  --enable-handshake \
+  --stream-key "your-secret-key"
 ```
 
-### 7. 纯命令行参数（无 config.json）
+### 3. 自动查找空闲端口
 
-```sh
-./backup-helper --host=127.0.0.1 --user=root --password=123456 --port=3306 --backup --mode=oss --compress-type=qp
+```bash
+# 接收端：自动查找端口
+./backup-helper receive --from-stream 0
+# 输出：[backup-helper] Listening on 192.168.1.100:54321
+
+# 备份端：使用显示的端口
+./backup-helper backup --host 127.0.0.1 --user root --to-stream 54321
 ```
 
-### 8. 上传已存在的备份文件到 OSS
+### 4. 使用管道传输
 
-```sh
-./backup-helper --config config.json --existed-backup backup.xb --mode=oss
+```bash
+# 从 stdin 读取并上传
+cat backup.xb | ./backup-helper send --stdin --to-oss
+
+# 接收并直接解包
+./backup-helper receive --from-stream 9000 --stdout | xbstream -x -C /data/mysql
 ```
 
-### 9. 通过 TCP 流式传输已存在的备份文件
+### 5. 验证备份文件
 
-```sh
-./backup-helper --config config.json --existed-backup backup.xb --mode=stream --stream-port=9999
-# 另一个终端拉流
-nc 127.0.0.1 9999 > streamed-backup.xb
+```bash
+# 仅验证，不传输
+./backup-helper send --file backup.xb --validate-only
 ```
 
-### 10. 使用 cat 命令从 stdin 读取并上传到 OSS
+### 6. 指定英文界面
 
-```sh
-cat backup.xb | ./backup-helper --config config.json --existed-backup - --mode=oss
+```bash
+./backup-helper backup --lang en --host 127.0.0.1 --user root --to-oss
 ```
 
-### 11. 使用 cat 命令从 stdin 读取并通过 TCP 传输
+### 7. 禁用限速（最大速度）
 
-```sh
-cat backup.xb | ./backup-helper --config config.json --existed-backup - --mode=stream --stream-port=9999
+```bash
+./backup-helper backup --host 127.0.0.1 --user root --to-oss --io-limit -1
 ```
 
-### 12. 手动指定上传限速（如限制到 100 MB/s）
+### 8. 不同压缩类型
 
-```sh
-./backup-helper --config config.json --backup --mode=oss --io-limit 100MB/s
-# 支持单位：KB/s, MB/s, GB/s, TB/s，也可以直接使用字节/秒
+```bash
+# zstd 压缩（推荐，压缩率高）
+./backup-helper backup --host 127.0.0.1 --user root --to-oss --compress-type zstd
+
+# qpress 压缩
+./backup-helper backup --host 127.0.0.1 --user root --to-oss --compress-type qp
+
+# 不压缩
+./backup-helper backup --host 127.0.0.1 --user root --to-oss --compress-type none
 ```
 
-### 13. 禁用限速（不限速上传）
+**注意**：stream 模式下压缩参数无效，始终传输原始数据流。
 
-```sh
-./backup-helper --config config.json --backup --mode=oss --io-limit -1
-# 使用 -1 表示完全禁用限速，以最大速度上传
-```
+### 9. AI 诊断配置
 
-### 14. 指定预估大小以显示准确的进度
+```bash
+# 自动诊断（需要在 config.json 中配置 qwenAPIKey）
+./backup-helper backup --host 127.0.0.1 --user root --to-oss --ai-diagnose on
 
-```sh
-./backup-helper --config config.json --backup --mode=oss --estimated-size 1GB
-# 支持单位：KB, MB, GB, TB，也可以直接使用字节
-# 例如：--estimated-size 1073741824 或 --estimated-size 1GB
-```
+# 关闭 AI 诊断
+./backup-helper backup --host 127.0.0.1 --user root --to-oss --ai-diagnose off
 
-### 15. 下载模式：从 TCP 流接收备份数据
-
-```sh
-# 下载到默认文件（backup_YYYYMMDDHHMMSS.xb）
-./backup-helper --download --stream-port 9999
-
-# 下载到指定文件
-./backup-helper --download --stream-port 9999 --output my_backup.xb
-
-# 流式输出到 stdout（可用于管道压缩或解包）
-./backup-helper --download --stream-port 9999 --output - | zstd -d > backup.xb
-
-# 直接使用 xbstream 解包到目录
-./backup-helper --download --stream-port 9999 --output - | xbstream -x -C /path/to/extract/dir
-
-# 如果备份是压缩的，需要先解压缩再解包
-./backup-helper --download --stream-port 9999 --output - | xbstream -x -C /path/to/extract/dir --decompress --decompress-threads=4
-
-# 带限速下载
-./backup-helper --download --stream-port 9999 --io-limit 100MB/s
-
-# 带进度显示（需要提供预估大小）
-./backup-helper --download --stream-port 9999 --estimated-size 1GB
+# 交互式询问（默认）
+./backup-helper backup --host 127.0.0.1 --user root --to-oss
 ```
 
 ---
@@ -247,7 +435,7 @@ cat backup.xb | ./backup-helper --config config.json --existed-backup - --mode=s
   - 支持单位：`KB/s`, `MB/s`, `GB/s`, `TB/s`（如 `100MB/s`, `1GB/s`）
   - 也可以直接使用字节/秒（如 `104857600` 表示 100 MB/s）
   - 使用 `-1` 表示完全禁用限速（不限速上传）
-- **配置文件**：可以在配置文件中设置 `ioLimit` 字段，或使用 `traffic` 字段（单位：字节/秒）
+- **配置文件**：可以在配置文件中设置 `ioLimit` 字段，或使用 `traffic` 字段（单位：字节/秒，已废弃）
 
 示例输出：
 ```
@@ -263,23 +451,127 @@ Progress: 1.3 GB / 1.5 GB (86.7%) - 99.2 MB/s - Duration: 13.1s
 
 ---
 
-## 多语言支持
+## 🌐 多语言支持
 
-- 自动检测系统语言（支持中文/英文），也可通过 `--lang=zh` 或 `--lang=en` 强制切换。
-- 所有终端输出均支持中英文切换。
-
----
-
-## 常见问题
-
-- **zstd 未安装**：请先安装 zstd 并确保在 PATH 中。
-- **OSS 上传失败**：请检查配置文件中的 OSS 相关参数。
-- **MySQL 连接失败**：请检查数据库主机、端口、用户名、密码。
-- **日志堆积**：程序会自动清理 logs 目录，仅保留最近 10 个日志。
+- 自动检测系统语言（支持中文/英文）
+- 可通过 `--lang=zh` 或 `--lang=en` 强制切换
+- 所有终端输出均支持中英文切换
 
 ---
 
-如需更多高级用法或遇到问题，请查阅源码或提交 issue。
+## 🔧 开发与贡献
+
+### 代码质量
+
+本项目采用现代化的 Go 开发实践：
+
+- ✅ **清晰的分层架构**：遵循 DDD 和 Clean Architecture 原则
+- ✅ **依赖注入**：使用构造函数注入，提高可测试性
+- ✅ **统一错误处理**：自定义错误类型系统
+- ✅ **代码复用**：公共函数提取，消除重复代码
+- ✅ **单一职责**：方法职责单一，易于维护和测试
+
+### 最近优化（v1.0.0-alpha）
+
+#### 1. 命令行接口重构
+- 从单一命令改为子命令架构（`backup`、`send`、`receive`）
+- 更符合 UNIX 哲学和用户习惯
+- 提供更清晰的功能划分
+
+#### 2. 代码质量提升
+- 提取公共函数到 `cmd/common.go`，减少 **30%+** 重复代码
+- 拆分大方法为小方法，提高可读性和可测试性
+- 引入统一错误类型系统（`internal/pkg/errors`）
+- 统一配置字段（`ioLimit` 优先于 `traffic`）
+
+#### 3. 服务层优化
+- 将 `BackupService.Execute()` 从 200+ 行拆分为 10+ 个小方法
+- 每个方法职责单一：验证连接、执行备份、传输数据、验证结果等
+- 提高了代码的可维护性和可测试性
+
+#### 4. 架构改进
+- 更清晰的关注点分离
+- 更好的依赖管理
+- 为单元测试打下良好基础
+
+### 贡献指南
+
+欢迎贡献代码、报告问题或提出建议！
+
+1. Fork 本项目
+2. 创建特性分支（`git checkout -b feature/AmazingFeature`）
+3. 提交更改（`git commit -m 'Add some AmazingFeature'`）
+4. 推送到分支（`git push origin feature/AmazingFeature`）
+5. 开启 Pull Request
+
+---
+
+## ❓ 常见问题
+
+### 安装问题
+
+**Q: zstd 未安装怎么办？**
+```bash
+# macOS
+brew install zstd
+
+# Ubuntu/Debian
+sudo apt-get install zstd
+
+# CentOS/RHEL
+sudo yum install zstd
+```
+
+**Q: xtrabackup 未找到？**
+
+请访问 [Percona XtraBackup 下载页面](https://www.percona.com/downloads/Percona-XtraBackup-LATEST/) 安装。
+
+### 使用问题
+
+**Q: OSS 上传失败？**
+
+检查配置文件中的 OSS 相关参数：
+- `endpoint` 是否正确
+- `accessKeyId` 和 `accessKeySecret` 是否有效
+- `bucketName` 是否存在且有写入权限
+
+**Q: MySQL 连接失败？**
+
+检查：
+- 主机地址和端口是否正确
+- 用户名和密码是否正确
+- MySQL 用户是否有足够的备份权限（RELOAD, LOCK TABLES, PROCESS, REPLICATION CLIENT）
+
+**Q: 备份失败但没有错误信息？**
+
+查看日志文件（默认在 `/var/log/mysql-backup-helper/` 或 `logs/` 目录）。
+
+**Q: 如何启用 AI 诊断？**
+
+在配置文件中添加：
+```json
+{
+  "qwenAPIKey": "your-qwen-api-key"
+}
+```
+
+然后使用 `--ai-diagnose on` 参数。
+
+### 性能问题
+
+**Q: 备份速度慢？**
+
+1. 检查是否设置了 `--io-limit`，如需全速备份使用 `-1`
+2. 考虑使用 `qp` 压缩代替 `zstd`（压缩速度更快）
+3. 使用 `stream` 模式代替 `oss` 模式（跳过 OSS 上传延迟）
+
+**Q: 日志文件堆积？**
+
+程序会自动清理日志目录，仅保留最近 10 个日志文件。如需修改，可以在代码中调整 `cleanOldLogs()` 函数的参数。
+
+---
+
+如需更多帮助或遇到其他问题，请查阅源码或提交 issue。
 
 ## Makefile 使用说明
 

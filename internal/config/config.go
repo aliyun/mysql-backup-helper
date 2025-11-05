@@ -25,7 +25,7 @@ type Config struct {
 	// Upload configuration
 	Size    int   `json:"size"`    // Buffer size for multipart upload
 	Buffer  int   `json:"buffer"`  // Buffer count
-	Traffic int64 `json:"traffic"` // Bandwidth limit in bytes/second
+	Traffic int64 `json:"traffic"` // Bandwidth limit in bytes/second (deprecated: use IOLimit instead)
 
 	// MySQL configuration
 	MysqlHost     string       `json:"mysqlHost"`
@@ -82,9 +82,14 @@ func (c *Config) SetDefaults() {
 	if c.Buffer == 0 {
 		c.Buffer = 10
 	}
-	if c.Traffic == 0 {
-		c.Traffic = 209715200 // 200MB/s
+
+	// Priority: IOLimit > Traffic, for backward compatibility
+	if c.IOLimit > 0 {
+		c.Traffic = c.IOLimit
+	} else if c.Traffic == 0 {
+		c.Traffic = 209715200 // 200MB/s default
 	}
+
 	// Note: StreamPort 0 means auto-find available port, don't set default to 9999
 	if c.MysqlPort == 0 {
 		c.MysqlPort = 3306

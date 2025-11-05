@@ -1,9 +1,7 @@
 package cmd
 
 import (
-	"backup-helper/internal/pkg/format"
 	"backup-helper/internal/service"
-	"fmt"
 
 	"github.com/gioco-play/easy-i18n/i18n"
 	"github.com/spf13/cobra"
@@ -104,49 +102,25 @@ func runBackup(cmd *cobra.Command, args []string) error {
 	}
 
 	// Determine mode based on flags
-	mode := "oss"
-	streamPort := 0
-	if backupToStream >= 0 {
-		mode = "stream"
-		streamPort = backupToStream
-		if streamPort == 0 && cfg.StreamPort > 0 {
-			streamPort = cfg.StreamPort
-		}
-	} else if !backupToOSS {
-		// Default to OSS if no destination specified
-		backupToOSS = true
+	mode, streamPort := determineMode(backupToOSS, backupToStream)
+	if mode == "stream" && streamPort == 0 && cfg.StreamPort > 0 {
+		streamPort = cfg.StreamPort
 	}
 
-	// Parse estimated size
-	var estimatedSize int64
-	if backupEstimatedSize != "" {
-		parsedSize, err := format.ParseSize(backupEstimatedSize)
-		if err != nil {
-			return fmt.Errorf("error parsing --estimated-size '%s': %v", backupEstimatedSize, err)
-		}
-		estimatedSize = parsedSize
-	} else if cfg.EstimatedSize > 0 {
-		estimatedSize = cfg.EstimatedSize
+	// Parse estimated size using common function
+	estimatedSize, err := parseEstimatedSize(backupEstimatedSize, cfg.EstimatedSize)
+	if err != nil {
+		return err
 	}
 
-	// Parse IO limit
-	var ioLimit int64
-	if backupIOLimit != "" {
-		parsedLimit, err := format.ParseRateLimit(backupIOLimit)
-		if err != nil {
-			return fmt.Errorf("error parsing --io-limit '%s': %v", backupIOLimit, err)
-		}
-		ioLimit = parsedLimit
-	} else if cfg.IOLimit > 0 {
-		ioLimit = cfg.IOLimit
+	// Parse IO limit using common function
+	ioLimit, err := parseIOLimit(backupIOLimit, cfg.IOLimit)
+	if err != nil {
+		return err
 	}
 
-	// Update traffic config based on ioLimit
-	if ioLimit == -1 {
-		cfg.Traffic = 0 // 0 means unlimited
-	} else if ioLimit > 0 {
-		cfg.Traffic = ioLimit
-	}
+	// Apply IO limit to config
+	applyIOLimit(cfg, ioLimit)
 
 	// Prompt for password if not provided
 	if backupPassword == "" {
@@ -176,15 +150,8 @@ func runBackup(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	// Parse handshake settings
-	enableHandshake := backupEnableHandshake
-	if !cmd.Flags().Changed("enable-handshake") {
-		enableHandshake = cfg.EnableHandshake
-	}
-	streamKey := backupStreamKey
-	if streamKey == "" {
-		streamKey = cfg.StreamKey
-	}
+	// Parse handshake settings using common function
+	enableHandshake, streamKey := parseHandshakeSettings(cmd, "enable-handshake", backupEnableHandshake, backupStreamKey, cfg)
 
 	// Create backup service and execute
 	backupService := service.NewBackupService(cfg)

@@ -87,17 +87,6 @@ func init() {
 	rootCmd.PersistentFlags().BoolVarP(&verbose, "verbose", "v", false, "verbose output")
 	rootCmd.PersistentFlags().BoolVarP(&quiet, "quiet", "q", false, "quiet mode (minimal output)")
 
-	// Legacy flags for backward compatibility (marked as deprecated)
-	rootCmd.PersistentFlags().Bool("backup", false, "[DEPRECATED] Use 'backup' subcommand instead")
-	rootCmd.PersistentFlags().Bool("download", false, "[DEPRECATED] Use 'receive' subcommand instead")
-	rootCmd.PersistentFlags().String("existed-backup", "", "[DEPRECATED] Use 'send --file' instead")
-	rootCmd.PersistentFlags().BoolP("version", "", false, "[DEPRECATED] Use 'version' subcommand instead")
-
-	// Mark as deprecated
-	rootCmd.PersistentFlags().MarkDeprecated("backup", "use 'mysql-backup-helper backup' instead")
-	rootCmd.PersistentFlags().MarkDeprecated("download", "use 'mysql-backup-helper receive' instead")
-	rootCmd.PersistentFlags().MarkDeprecated("existed-backup", "use 'mysql-backup-helper send --file' instead")
-	rootCmd.PersistentFlags().MarkDeprecated("version", "use 'mysql-backup-helper version' instead")
 }
 
 // GetConfig returns the global config object

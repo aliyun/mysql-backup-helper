@@ -1,7 +1,6 @@
 package cmd
 
 import (
-	"backup-helper/internal/pkg/format"
 	"backup-helper/internal/service"
 	"fmt"
 	"time"
@@ -76,15 +75,8 @@ func runReceive(cmd *cobra.Command, args []string) error {
 		streamPort = cfg.StreamPort
 	}
 
-	// Parse handshake settings
-	enableHandshake := receiveEnableHandshake
-	if !cmd.Flags().Changed("enable-handshake") {
-		enableHandshake = cfg.EnableHandshake
-	}
-	streamKey := receiveStreamKey
-	if streamKey == "" {
-		streamKey = cfg.StreamKey
-	}
+	// Parse handshake settings using common function
+	enableHandshake, streamKey := parseHandshakeSettings(cmd, "enable-handshake", receiveEnableHandshake, receiveStreamKey, cfg)
 
 	// Determine output path
 	outputPath := receiveOutput
@@ -99,36 +91,20 @@ func runReceive(cmd *cobra.Command, args []string) error {
 		outputPath = fmt.Sprintf("backup_%s.xb", timestamp)
 	}
 
-	// Parse estimated size
-	var estimatedSize int64
-	if receiveEstimatedSize != "" {
-		parsedSize, err := format.ParseSize(receiveEstimatedSize)
-		if err != nil {
-			return fmt.Errorf("error parsing --estimated-size '%s': %v", receiveEstimatedSize, err)
-		}
-		estimatedSize = parsedSize
-	} else if cfg.EstimatedSize > 0 {
-		estimatedSize = cfg.EstimatedSize
+	// Parse estimated size using common function
+	estimatedSize, err := parseEstimatedSize(receiveEstimatedSize, cfg.EstimatedSize)
+	if err != nil {
+		return err
 	}
 
-	// Parse IO limit
-	var ioLimit int64
-	if receiveIOLimit != "" {
-		parsedLimit, err := format.ParseRateLimit(receiveIOLimit)
-		if err != nil {
-			return fmt.Errorf("error parsing --io-limit '%s': %v", receiveIOLimit, err)
-		}
-		ioLimit = parsedLimit
-	} else if cfg.IOLimit > 0 {
-		ioLimit = cfg.IOLimit
+	// Parse IO limit using common function
+	ioLimit, err := parseIOLimit(receiveIOLimit, cfg.IOLimit)
+	if err != nil {
+		return err
 	}
 
-	// Update traffic config
-	if ioLimit == -1 {
-		cfg.Traffic = 0
-	} else if ioLimit > 0 {
-		cfg.Traffic = ioLimit
-	}
+	// Apply IO limit to config
+	applyIOLimit(cfg, ioLimit)
 
 	// Display header
 	if outputPath != "-" {

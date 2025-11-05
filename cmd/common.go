@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"backup-helper/internal/config"
 	"backup-helper/internal/pkg/format"
 	"backup-helper/pkg/version"
 	"fmt"
@@ -9,6 +10,7 @@ import (
 	"time"
 
 	"github.com/gioco-play/easy-i18n/i18n"
+	"github.com/spf13/cobra"
 )
 
 // outputHeader displays the tool header
@@ -61,4 +63,83 @@ func outputHeaderToStderr() {
 // formatBytes formats bytes to human-readable format (delegate to format package)
 func formatBytes(bytes int64) string {
 	return format.Bytes(bytes)
+}
+
+// parseEstimatedSize parses estimated size from flag or config
+func parseEstimatedSize(flagValue string, configValue int64) (int64, error) {
+	if flagValue != "" {
+		parsedSize, err := format.ParseSize(flagValue)
+		if err != nil {
+			return 0, fmt.Errorf("error parsing --estimated-size '%s': %v", flagValue, err)
+		}
+		return parsedSize, nil
+	}
+	if configValue > 0 {
+		return configValue, nil
+	}
+	return 0, nil
+}
+
+// parseIOLimit parses IO limit from flag or config
+func parseIOLimit(flagValue string, configValue int64) (int64, error) {
+	if flagValue != "" {
+		parsedLimit, err := format.ParseRateLimit(flagValue)
+		if err != nil {
+			return 0, fmt.Errorf("error parsing --io-limit '%s': %v", flagValue, err)
+		}
+		return parsedLimit, nil
+	}
+	if configValue > 0 {
+		return configValue, nil
+	}
+	return 0, nil
+}
+
+// applyIOLimit updates config traffic based on IO limit
+func applyIOLimit(cfg *config.Config, ioLimit int64) {
+	if ioLimit == -1 {
+		cfg.Traffic = 0 // 0 means unlimited
+	} else if ioLimit > 0 {
+		cfg.Traffic = ioLimit
+	}
+}
+
+// parseHandshakeSettings parses handshake settings from flags or config
+func parseHandshakeSettings(cmd *cobra.Command, enableFlagName string, enableFlag bool, keyFlag string, cfg *config.Config) (bool, string) {
+	enableHandshake := enableFlag
+	if !cmd.Flags().Changed(enableFlagName) {
+		enableHandshake = cfg.EnableHandshake
+	}
+
+	streamKey := keyFlag
+	if streamKey == "" {
+		streamKey = cfg.StreamKey
+	}
+
+	return enableHandshake, streamKey
+}
+
+// determineMode determines operation mode based on flags
+func determineMode(toOSS bool, toStream int) (mode string, streamPort int) {
+	if toStream >= 0 {
+		mode = "stream"
+		streamPort = toStream
+	} else if toOSS {
+		mode = "oss"
+		streamPort = 0
+	} else {
+		// Default to OSS if no destination specified
+		mode = "oss"
+		streamPort = 0
+	}
+	return mode, streamPort
+}
+
+// printIOLimit prints IO limit information
+func printIOLimit(traffic int64) {
+	if traffic == 0 {
+		i18n.Printf("[backup-helper] Rate limiting disabled (unlimited speed)\n")
+	} else {
+		i18n.Printf("[backup-helper] IO rate limit set to: %s/s\n", format.Bytes(traffic))
+	}
 }
