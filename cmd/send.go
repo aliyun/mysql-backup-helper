@@ -16,12 +16,17 @@ var (
 	sendMode       string
 	sendStreamPort int
 
+	// OSS flags (non-sensitive)
+	sendEndpoint   string
+	sendBucketName string
+	sendObjectName string
+
 	// Validation flags
 	sendSkipValidation bool
 	sendValidateOnly   bool
 
 	// Performance flags
-	sendIOLimit string
+	sendTraffic string
 
 	// Authentication flags
 	sendEnableAuth bool
@@ -35,14 +40,18 @@ var sendCmd = &cobra.Command{
 	Long: `Upload existing backup file to OSS or stream via TCP.
 
 Examples:
-  # Upload existing backup to OSS
-  mysql-backup-helper send --file /path/to/backup.xb --mode oss
+  # Upload existing backup to OSS (OSS credentials from config file)
+  mysql-backup-helper send --config config.json --file /path/to/backup.xb --mode oss
+
+  # Upload to specific OSS bucket (override config)
+  mysql-backup-helper send --config config.json --file /path/to/backup.xb \
+    --mode oss --bucket-name my-backup-bucket --object-name backup/mysql
 
   # Stream backup file via TCP
   mysql-backup-helper send --file /path/to/backup.xb --mode stream --stream-port 9000
 
   # Send from stdin (pipe from another command)
-  cat backup.xb | mysql-backup-helper send --stdin --mode oss
+  cat backup.xb | mysql-backup-helper send --config config.json --stdin --mode oss
 
   # Only validate backup file
   mysql-backup-helper send --file backup.xb --validate-only`,
@@ -60,12 +69,17 @@ func init() {
 	sendCmd.Flags().StringVar(&sendMode, "mode", "", "Transfer mode: oss or stream (default: oss)")
 	sendCmd.Flags().IntVar(&sendStreamPort, "stream-port", 0, "Stream port for TCP (0=auto-find port, only used when mode=stream)")
 
+	// OSS flags (non-sensitive)
+	sendCmd.Flags().StringVar(&sendEndpoint, "endpoint", "", "OSS endpoint URL")
+	sendCmd.Flags().StringVar(&sendBucketName, "bucket-name", "", "OSS bucket name")
+	sendCmd.Flags().StringVar(&sendObjectName, "object-name", "", "OSS object name prefix")
+
 	// Validation flags
 	sendCmd.Flags().BoolVar(&sendSkipValidation, "skip-validation", false, "Skip backup file validation")
 	sendCmd.Flags().BoolVar(&sendValidateOnly, "validate-only", false, "Only validate, don't transfer")
 
 	// Performance flags
-	sendCmd.Flags().StringVar(&sendIOLimit, "io-limit", "", "IO bandwidth limit (e.g., '100MB/s')")
+	sendCmd.Flags().StringVar(&sendTraffic, "traffic", "", "Traffic bandwidth limit (e.g., '100MB/s')")
 
 	// Authentication flags
 	sendCmd.Flags().BoolVar(&sendEnableAuth, "enable-auth", false, "Enable stream authentication")
@@ -99,14 +113,25 @@ func runSend(cmd *cobra.Command, args []string) error {
 		streamPort = cfg.StreamPort
 	}
 
-	// Parse IO limit using common function
-	ioLimit, err := parseIOLimit(sendIOLimit, cfg.IOLimit)
+	// Parse traffic limit using common function
+	traffic, err := parseTraffic(sendTraffic, cfg.Traffic)
 	if err != nil {
 		return err
 	}
 
-	// Apply IO limit to config
-	applyIOLimit(cfg, ioLimit)
+	// Apply traffic limit to config
+	applyTraffic(cfg, traffic)
+
+	// Update OSS config if provided (non-sensitive info only)
+	if sendEndpoint != "" {
+		cfg.Endpoint = sendEndpoint
+	}
+	if sendBucketName != "" {
+		cfg.BucketName = sendBucketName
+	}
+	if sendObjectName != "" {
+		cfg.ObjectName = sendObjectName
+	}
 
 	// Parse authentication settings using common function
 	enableAuth, authKey := parseAuthSettings(cmd, "enable-auth", sendEnableAuth, sendAuthKey, cfg)

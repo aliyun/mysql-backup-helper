@@ -1,7 +1,7 @@
 package cmd
 
 import (
-	"backup-helper/internal/infrastructure/ai"
+	"backup-helper/internal/infra/ai"
 	"fmt"
 	"os"
 

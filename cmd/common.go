@@ -65,12 +65,12 @@ func formatBytes(bytes int64) string {
 	return format.Bytes(bytes)
 }
 
-// parseIOLimit parses IO limit from flag or config
-func parseIOLimit(flagValue string, configValue int64) (int64, error) {
+// parseTraffic parses traffic limit from flag or config
+func parseTraffic(flagValue string, configValue int64) (int64, error) {
 	if flagValue != "" {
 		parsedLimit, err := format.ParseRateLimit(flagValue)
 		if err != nil {
-			return 0, fmt.Errorf("error parsing --io-limit '%s': %v", flagValue, err)
+			return 0, fmt.Errorf("error parsing --traffic '%s': %v", flagValue, err)
 		}
 		return parsedLimit, nil
 	}
@@ -80,12 +80,12 @@ func parseIOLimit(flagValue string, configValue int64) (int64, error) {
 	return 0, nil
 }
 
-// applyIOLimit updates config traffic based on IO limit
-func applyIOLimit(cfg *config.Config, ioLimit int64) {
-	if ioLimit == -1 {
+// applyTraffic updates config traffic based on traffic limit
+func applyTraffic(cfg *config.Config, traffic int64) {
+	if traffic == -1 {
 		cfg.Traffic = 0 // 0 means unlimited
-	} else if ioLimit > 0 {
-		cfg.Traffic = ioLimit
+	} else if traffic > 0 {
+		cfg.Traffic = traffic
 	}
 }
 
@@ -120,12 +120,12 @@ func determineMode(toOSS bool, toStream int) (mode string, streamPort int) {
 	return mode, streamPort
 }
 
-// printIOLimit prints IO limit information
-func printIOLimit(traffic int64) {
+// printTraffic prints traffic limit information
+func printTraffic(traffic int64) {
 	if traffic == 0 {
 		i18n.Printf("[backup-helper] Rate limiting disabled (unlimited speed)\n")
 	} else {
-		i18n.Printf("[backup-helper] IO rate limit set to: %s/s\n", format.Bytes(traffic))
+		i18n.Printf("[backup-helper] Traffic limit set to: %s/s\n", format.Bytes(traffic))
 	}
 }
 

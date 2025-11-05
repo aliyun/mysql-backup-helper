@@ -4,8 +4,8 @@ import (
 	"backup-helper/internal/config"
 	"backup-helper/internal/domain/backup"
 	"backup-helper/internal/domain/mysql"
-	"backup-helper/internal/infrastructure/storage/oss"
-	"backup-helper/internal/infrastructure/stream"
+	"backup-helper/internal/infra/storage/oss"
+	"backup-helper/internal/infra/stream"
 	"backup-helper/internal/pkg/format"
 	"backup-helper/internal/pkg/ratelimit"
 	"fmt"
@@ -64,8 +64,8 @@ func (s *BackupService) Execute(opts *BackupOptions) error {
 	}
 	defer conn.Close()
 
-	// 2. Display IO limit information
-	s.displayIOLimit()
+	// 2. Display traffic limit information
+	s.displayTraffic()
 
 	// 3. Check xtrabackup compatibility
 	s.checkXtraBackupVersion()
@@ -112,12 +112,12 @@ func (s *BackupService) validateMySQLConnection() (*mysql.Connection, error) {
 	return conn, nil
 }
 
-// displayIOLimit displays IO rate limit information
-func (s *BackupService) displayIOLimit() {
+// displayTraffic displays traffic limit information
+func (s *BackupService) displayTraffic() {
 	if s.cfg.Traffic == 0 {
 		s.logInfo("[backup-helper] Rate limiting disabled (unlimited speed)\n")
 	} else {
-		s.logInfo("[backup-helper] IO rate limit set to: %s/s\n", format.Bytes(s.cfg.Traffic))
+		s.logInfo("[backup-helper] Traffic limit set to: %s/s\n", format.Bytes(s.cfg.Traffic))
 	}
 }
 

@@ -25,7 +25,7 @@ type Config struct {
 	// Upload configuration
 	Size    int   `json:"size"`    // Buffer size for multipart upload
 	Buffer  int   `json:"buffer"`  // Buffer count
-	Traffic int64 `json:"traffic"` // Bandwidth limit in bytes/second (deprecated: use IOLimit instead)
+	Traffic int64 `json:"traffic"` // Network bandwidth limit in bytes/second (for both OSS upload and stream transfer)
 
 	// MySQL configuration
 	MysqlHost     string       `json:"mysqlHost"`
@@ -51,9 +51,6 @@ type Config struct {
 
 	// Log configuration
 	LogDir string `json:"logDir"` // Log directory path
-
-	// Performance configuration
-	IOLimit int64 `json:"ioLimit"` // IO bandwidth limit in bytes/second
 
 	// Download configuration
 	DownloadOutput string `json:"downloadOutput"` // Output path for download mode
@@ -86,10 +83,8 @@ func (c *Config) SetDefaults() {
 		c.Buffer = 10
 	}
 
-	// Priority: IOLimit > Traffic, for backward compatibility
-	if c.IOLimit > 0 {
-		c.Traffic = c.IOLimit
-	} else if c.Traffic == 0 {
+	// Set default traffic limit if not specified
+	if c.Traffic == 0 {
 		c.Traffic = 209715200 // 200MB/s default
 	}
 

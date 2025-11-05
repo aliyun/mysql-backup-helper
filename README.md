@@ -45,7 +45,6 @@
   "objectName": "backup/your-backup",
   "size": 104857600,
   "buffer": 10,
-  "ioLimit": 209715200,
   "mysqlHost": "127.0.0.1",
   "mysqlPort": 3306,
   "mysqlUser": "root",
@@ -54,10 +53,13 @@
   "compressType": "zstd",
   "mode": "oss",
   "streamPort": 9999,
+  "qwenAPIKey": "your-qwen-api-key",
   "enableAuth": false,
   "authKey": "your-secret-key",
-  "logDir": "/var/log/mysql-backup-helper",
-  "qwenAPIKey": ""
+  "existedBackup": "your-existed-backup-file-path",
+  "traffic": 209715200,
+  "downloadOutput": "",
+  "logDir": "/var/log/mysql-backup-helper"
 }
 ```
 
@@ -73,8 +75,7 @@
 #### 上传配置
 - **size**: 分片上传大小（字节，默认 100MB）
 - **buffer**: 缓冲区数量（默认 10）
-- **ioLimit**: IO 带宽限制（字节/秒，默认 200MB/s，0表示使用默认值）
-- **traffic**: ⚠️ 已废弃，请使用 `ioLimit` 代替
+- **traffic**: 网络带宽限制（字节/秒，默认 200MB/s，设置为 0 表示使用默认值 200MB/s，适用于 OSS 上传和流式传输）
 
 #### MySQL 配置
 - **mysqlHost**: MySQL 主机地址
@@ -127,22 +128,31 @@
 | --password          | MySQL 密码（未指定则交互输入）                         |
 | --mode              | 备份模式：oss 或 stream（默认：oss）                   |
 | --stream-port       | TCP 流端口号（仅 stream 模式，0=自动查找）             |
+| --endpoint          | OSS endpoint URL（仅 oss 模式）                        |
+| --bucket-name       | OSS bucket 名称（仅 oss 模式）                         |
+| --object-name       | OSS object 名称前缀（仅 oss 模式）                     |
 | --compress-type     | 压缩类型：zstd、qp 或 none                             |
-| --io-limit          | IO 带宽限制（如 '100MB/s'，-1=不限速）                 |
+| --traffic           | 流量带宽限制（如 '100MB/s'，-1=不限速）                |
 | --enable-auth       | 启用流认证（仅 stream 模式）                           |
 | --auth-key          | 认证密钥（仅 stream 模式）                             |
 
+**注意**：OSS 凭证（accessKeyId、accessKeySecret、securityToken）必须通过配置文件提供，不支持命令行参数（安全考虑）。
+
 **示例**：
 ```bash
-# 备份并上传到 OSS
-backup-helper backup --host 127.0.0.1 --user root --mode oss
+# 备份并上传到 OSS（需要配置文件提供凭证）
+backup-helper backup --config config.json --host 127.0.0.1 --user root --mode oss
+
+# 备份到指定 bucket（覆盖配置文件）
+backup-helper backup --config config.json --host 127.0.0.1 --user root \
+  --mode oss --bucket-name my-backup-bucket --object-name backup/mysql
 
 # 备份并通过 TCP 流传输
 backup-helper backup --host 127.0.0.1 --user root --mode stream --stream-port 9000
 
 # 使用 zstd 压缩并限速
-backup-helper backup --host 127.0.0.1 --user root --mode oss \
-  --compress-type zstd --io-limit 100MB/s
+backup-helper backup --config config.json --host 127.0.0.1 --user root --mode oss \
+  --compress-type zstd --traffic 100MB/s
 ```
 
 #### 2. `send` - 发送已有备份文件
@@ -157,22 +167,31 @@ backup-helper backup --host 127.0.0.1 --user root --mode oss \
 | --stdin             | 从 stdin 读取备份数据                      |
 | --mode              | 传输模式：oss 或 stream（默认：oss）       |
 | --stream-port       | TCP 流端口号（仅 stream 模式）             |
+| --endpoint          | OSS endpoint URL（仅 oss 模式）            |
+| --bucket-name       | OSS bucket 名称（仅 oss 模式）             |
+| --object-name       | OSS object 名称前缀（仅 oss 模式）         |
 | --skip-validation   | 跳过备份文件验证                           |
 | --validate-only     | 仅验证文件，不传输                         |
-| --io-limit          | IO 带宽限制                                |
+| --traffic           | 流量带宽限制                               |
 | --enable-auth       | 启用流认证（仅 stream 模式）               |
 | --auth-key          | 认证密钥（仅 stream 模式）                 |
 
+**注意**：OSS 凭证（accessKeyId、accessKeySecret、securityToken）必须通过配置文件提供，不支持命令行参数（安全考虑）。
+
 **示例**：
 ```bash
-# 上传备份文件到 OSS
-backup-helper send --file backup.xb --mode oss
+# 上传备份文件到 OSS（需要配置文件提供凭证）
+backup-helper send --config config.json --file backup.xb --mode oss
+
+# 上传到指定 bucket（覆盖配置文件）
+backup-helper send --config config.json --file backup.xb \
+  --mode oss --bucket-name my-backup-bucket --object-name backup/mysql
 
 # 通过 TCP 流传输备份文件
 backup-helper send --file backup.xb --mode stream --stream-port 9000
 
 # 从 stdin 读取并上传
-cat backup.xb | backup-helper send --stdin --mode oss
+cat backup.xb | backup-helper send --config config.json --stdin --mode oss
 
 # 仅验证备份文件
 backup-helper send --file backup.xb --validate-only
@@ -189,7 +208,7 @@ backup-helper send --file backup.xb --validate-only
 | --from-stream       | 监听的 TCP 端口（0=自动查找）                     |
 | --output            | 输出文件路径（'-' 表示输出到 stdout，默认自动生成）|
 | --stdout            | 输出到 stdout                                     |
-| --io-limit          | IO 带宽限制                                       |
+| --traffic           | 流量带宽限制                                      |
 | --enable-auth       | 启用流认证                                        |
 | --auth-key          | 认证密钥                                          |
 
@@ -299,7 +318,7 @@ go build -o backup-helper
   --password yourpassword \
   --mode oss \
   --compress-type zstd \
-  --io-limit 100MB/s
+  --traffic 100MB/s
 ```
 
 ### 2. 跨网络备份传输（TCP Stream）
@@ -356,7 +375,7 @@ cat backup.xb | ./backup-helper send --stdin --mode oss
 ### 7. 禁用限速（最大速度）
 
 ```bash
-./backup-helper backup --host 127.0.0.1 --user root --mode oss --io-limit -1
+./backup-helper backup --host 127.0.0.1 --user root --mode oss --traffic -1
 ```
 
 ### 8. 不同压缩类型
@@ -417,16 +436,16 @@ You can check the backup log file for details: /var/log/mysql-backup-helper/back
 
 ## 带宽限速
 
-- **默认限速**：如果不指定 `--io-limit`，默认使用 200 MB/s 的限速
-- **手动限速**：使用 `--io-limit` 指定上传/下载带宽限制
+- **默认限速**：如果不指定 `--traffic`，默认使用 200 MB/s 的限速
+- **手动限速**：使用 `--traffic` 指定上传/下载带宽限制
   - 支持单位：`KB/s`, `MB/s`, `GB/s`, `TB/s`（如 `100MB/s`, `1GB/s`）
   - 也可以直接使用字节/秒（如 `104857600` 表示 100 MB/s）
   - 使用 `-1` 表示完全禁用限速（不限速上传）
-- **配置文件**：可以在配置文件中设置 `ioLimit` 字段，或使用 `traffic` 字段（单位：字节/秒，已废弃）
+- **配置文件**：可以在配置文件中设置 `traffic` 字段（单位：字节/秒）
 
 示例输出：
 ```
-[backup-helper] IO rate limit set to: 100.0 MB/s
+[backup-helper] Traffic limit set to: 100.0 MB/s
 
 Progress: 1.1 GB / 1.5 GB (73.3%) - 98.5 MB/s - Duration: 11.4s
 Progress: 1.3 GB / 1.5 GB (86.7%) - 99.2 MB/s - Duration: 13.1s
@@ -469,7 +488,7 @@ Progress: 1.3 GB / 1.5 GB (86.7%) - 99.2 MB/s - Duration: 13.1s
 - 提取公共函数到 `cmd/common.go`，减少 **30%+** 重复代码
 - 拆分大方法为小方法，提高可读性和可测试性
 - 引入统一错误类型系统（`internal/pkg/errors`）
-- 统一配置字段（`ioLimit` 优先于 `traffic`）
+- 统一使用 `traffic` 进行网络限速配置
 
 #### 3. 服务层优化
 - 将 `BackupService.Execute()` 从 200+ 行拆分为 10+ 个小方法
@@ -480,6 +499,7 @@ Progress: 1.3 GB / 1.5 GB (86.7%) - 99.2 MB/s - Duration: 13.1s
 - 更清晰的关注点分离
 - 更好的依赖管理
 - 为单元测试打下良好基础
+- 统一使用 `traffic` 进行网络限速配置（支持 OSS 上传和流式传输）
 
 ### 贡献指南
 
@@ -555,7 +575,7 @@ sudo yum install zstd
 
 **Q: 备份速度慢？**
 
-1. 检查是否设置了 `--io-limit`，如需全速备份使用 `-1`
+1. 检查是否设置了 `--traffic`，如需全速备份使用 `-1`
 2. 考虑使用 `qp` 压缩代替 `zstd`（压缩速度更快）
 3. 使用 `--mode stream` 代替 `--mode oss`（跳过 OSS 上传延迟）
 

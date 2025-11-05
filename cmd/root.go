@@ -31,10 +31,16 @@ upload to OSS, and TCP stream transfer.
 
 Examples:
   # Backup MySQL and upload to OSS
-  mysql-backup-helper backup --host 127.0.0.1 --user root --to-oss
+  mysql-backup-helper backup --host 127.0.0.1 --user root --mode oss
+
+  # Backup MySQL and stream via TCP
+  mysql-backup-helper backup --host 127.0.0.1 --user root --mode stream --stream-port 9000
+
+  # Send existing backup file to OSS
+  mysql-backup-helper send --file backup.xb --mode oss
 
   # Send existing backup file via TCP stream
-  mysql-backup-helper send --file backup.xb --to-stream 9000
+  mysql-backup-helper send --file backup.xb --mode stream --stream-port 9000
 
   # Receive backup from TCP stream
   mysql-backup-helper receive --from-stream 9000 --output backup.xb

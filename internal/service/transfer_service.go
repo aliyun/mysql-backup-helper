@@ -3,8 +3,8 @@ package service
 import (
 	"backup-helper/internal/config"
 	"backup-helper/internal/domain/backup"
-	"backup-helper/internal/infrastructure/storage/oss"
-	"backup-helper/internal/infrastructure/stream"
+	"backup-helper/internal/infra/storage/oss"
+	"backup-helper/internal/infra/stream"
 	"backup-helper/internal/pkg/format"
 	"backup-helper/internal/pkg/ratelimit"
 	"fmt"

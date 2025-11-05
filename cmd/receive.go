@@ -17,7 +17,7 @@ var (
 	receiveStdout bool
 
 	// Performance flags
-	receiveIOLimit string
+	receiveTraffic string
 
 	// Authentication flags
 	receiveEnableAuth bool
@@ -57,7 +57,7 @@ func init() {
 	receiveCmd.Flags().BoolVar(&receiveStdout, "stdout", false, "Write to stdout")
 
 	// Performance flags
-	receiveCmd.Flags().StringVar(&receiveIOLimit, "io-limit", "", "IO bandwidth limit")
+	receiveCmd.Flags().StringVar(&receiveTraffic, "traffic", "", "Traffic bandwidth limit")
 
 	// Authentication flags
 	receiveCmd.Flags().BoolVar(&receiveEnableAuth, "enable-auth", false, "Enable stream authentication")
@@ -89,14 +89,14 @@ func runReceive(cmd *cobra.Command, args []string) error {
 		outputPath = fmt.Sprintf("backup_%s.xb", timestamp)
 	}
 
-	// Parse IO limit using common function
-	ioLimit, err := parseIOLimit(receiveIOLimit, cfg.IOLimit)
+	// Parse traffic limit using common function
+	traffic, err := parseTraffic(receiveTraffic, cfg.Traffic)
 	if err != nil {
 		return err
 	}
 
-	// Apply IO limit to config
-	applyIOLimit(cfg, ioLimit)
+	// Apply traffic limit to config
+	applyTraffic(cfg, traffic)
 
 	// Display header
 	if outputPath != "-" {
