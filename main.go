@@ -38,6 +38,8 @@ func main() {
 	var estimatedSize int64
 	var ioLimitStr string
 	var ioLimit int64
+	var useSSH bool
+	var remoteOutput string
 
 	flag.BoolVar(&doBackup, "backup", false, "Run xtrabackup and upload to OSS")
 	flag.BoolVar(&doDownload, "download", false, "Download backup from TCP stream (listen on port)")
@@ -60,6 +62,8 @@ func main() {
 	flag.StringVar(&aiDiagnoseFlag, "ai-diagnose", "", "AI diagnosis on backup failure: on/off. If not set, prompt interactively.")
 	flag.BoolVar(&enableHandshake, "enable-handshake", false, "Enable handshake for TCP streaming (default: false, can be set in config)")
 	flag.StringVar(&streamKey, "stream-key", "", "Handshake key for TCP streaming (default: empty, can be set in config)")
+	flag.BoolVar(&useSSH, "ssh", false, "Use SSH to start receiver on remote host (requires --stream-host)")
+	flag.StringVar(&remoteOutput, "remote-output", "", "Remote output path when using SSH mode (default: auto-generated)")
 
 	flag.Parse()
 
@@ -360,23 +364,16 @@ func main() {
 				streamHost = cfg.StreamHost
 			}
 
-			// Only use config value if command line didn't specify and config has non-zero value
-			// streamPort 0 means auto-find available port (only when not using stream-host)
-			if streamHost == "" {
-				if streamPort == 0 && !isFlagPassed("stream-port") && cfg.StreamPort > 0 {
-					streamPort = cfg.StreamPort
-				}
-			} else {
-				// When using stream-host, port is required
-				if streamPort == 0 && !isFlagPassed("stream-port") {
-					if cfg.StreamPort > 0 {
-						streamPort = cfg.StreamPort
-					} else {
-						i18n.Printf("Error: --stream-port is required when using --stream-host\n")
-						cmd.Process.Kill()
-						os.Exit(1)
-					}
-				}
+			// Parse remote-output from command line or config (if exists)
+			if remoteOutput == "" && cfg.RemoteOutput != "" {
+				remoteOutput = cfg.RemoteOutput
+			}
+
+			// Validate SSH mode requirements
+			if useSSH && streamHost == "" {
+				i18n.Printf("Error: --ssh requires --stream-host\n")
+				cmd.Process.Kill()
+				os.Exit(1)
 			}
 
 			// handshake priority：command line > config > default
@@ -392,16 +389,76 @@ func main() {
 			var err error
 
 			if streamHost != "" {
-				// Active connection: connect to remote server
-				writer, _, closer, _, err = utils.StartStreamClient(streamHost, streamPort, enableHandshake, streamKey, totalSize)
-				if err != nil {
-					i18n.Printf("Stream client error: %v\n", err)
-					cmd.Process.Kill()
-					os.Exit(1)
+				if useSSH {
+					// SSH mode: Start receiver on remote via SSH
+					i18n.Printf("[backup-helper] Starting remote receiver via SSH on %s...\n", streamHost)
+
+					// Use stream-port if specified, otherwise auto-find (0)
+					sshPort := streamPort
+					if !isFlagPassed("stream-port") && cfg.StreamPort > 0 {
+						sshPort = cfg.StreamPort
+					}
+
+					remotePort, _, sshCleanup, err := utils.StartRemoteReceiverViaSSH(
+						streamHost, sshPort, remoteOutput, totalSize, enableHandshake, streamKey)
+					if err != nil {
+						i18n.Printf("SSH receiver error: %v\n", err)
+						cmd.Process.Kill()
+						os.Exit(1)
+					}
+
+					streamPort = remotePort
+					if sshPort > 0 {
+						i18n.Printf("[backup-helper] Remote receiver started on port %d via SSH\n", streamPort)
+					} else {
+						i18n.Printf("[backup-helper] Remote receiver started on auto-discovered port %d via SSH\n", streamPort)
+					}
+
+					// Connect to remote receiver
+					writer, _, closer, _, err = utils.StartStreamClient(
+						streamHost, streamPort, enableHandshake, streamKey, totalSize)
+					if err != nil {
+						sshCleanup()
+						i18n.Printf("Stream client error: %v\n", err)
+						cmd.Process.Kill()
+						os.Exit(1)
+					}
+
+					// Wrap closer to cleanup SSH process
+					originalCloser := closer
+					closer = func() {
+						if originalCloser != nil {
+							originalCloser()
+						}
+						sshCleanup()
+					}
+				} else {
+					// Normal mode: Direct connection to specified port
+					if streamPort == 0 && !isFlagPassed("stream-port") {
+						if cfg.StreamPort > 0 {
+							streamPort = cfg.StreamPort
+						} else {
+							i18n.Printf("Error: --stream-port is required when using --stream-host\n")
+							cmd.Process.Kill()
+							os.Exit(1)
+						}
+					}
+
+					writer, _, closer, _, err = utils.StartStreamClient(
+						streamHost, streamPort, enableHandshake, streamKey, totalSize)
+					if err != nil {
+						i18n.Printf("Stream client error: %v\n", err)
+						cmd.Process.Kill()
+						os.Exit(1)
+					}
 				}
 			} else {
 				// Passive connection: listen locally and wait for connection
 				// streamPort can be 0 now (auto-find available port)
+				if streamPort == 0 && !isFlagPassed("stream-port") && cfg.StreamPort > 0 {
+					streamPort = cfg.StreamPort
+				}
+
 				tcpWriter, _, closerFunc, actualPort, localIP, err := utils.StartStreamSender(streamPort, enableHandshake, streamKey, totalSize)
 				_ = actualPort // Port info already displayed in StartStreamSender
 				_ = localIP    // IP info already displayed in StartStreamSender

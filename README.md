@@ -73,6 +73,8 @@
 | --mode              | 备份模式：`oss`（上传到 OSS）或 `stream`（推送到 TCP 端口）  |
 | --stream-port       | 流式推送时监听的本地端口（如 9999，设为 0 则自动查找空闲端口），或指定远程端口（当使用 --stream-host 时） |
 | --stream-host       | 远程主机 IP（如 '192.168.1.100'）。指定后主动连接到远程服务器推送数据，类似 `nc host port` |
+| --ssh               | 使用 SSH 在远程主机自动启动接收服务（需要 --stream-host，依赖系统 SSH 配置） |
+| --remote-output     | SSH 模式下远程保存路径（默认：自动生成） |
 | --compress          | 启用压缩                                                  |
 | --compress-type     | 压缩类型：`qp`（qpress）、`zstd`          |
 | --lang              | 语言：`zh`（中文）或 `en`（英文），不指定则自动检测系统语言   |
@@ -149,6 +151,38 @@ nc 192.168.1.100 54321 > streamed-backup.xb
 ```
 
 这样可以实现类似 `xtrabackup | nc 192.168.1.100 9999` 的功能。
+
+### 5.3. SSH 模式：自动在远程启动接收服务
+
+如果有 SSH 权限，可以使用 `--ssh` 选项自动在远程主机启动接收服务，无需手动操作：
+
+```sh
+# SSH 模式 + 自动发现端口（推荐）
+./backup-helper --config config.json --backup --mode=stream \
+    --stream-host=replica-server \
+    --ssh \
+    --remote-output=/backup/mysql_backup.xb \
+    --estimated-size=10GB
+
+# SSH 模式 + 指定端口
+./backup-helper --config config.json --backup --mode=stream \
+    --stream-host=replica-server \
+    --ssh \
+    --stream-port=9999 \
+    --remote-output=/backup/mysql_backup.xb
+
+# 传统模式：需要提前在远程运行接收服务
+./backup-helper --config config.json --backup --mode=stream \
+    --stream-host=replica-server \
+    --stream-port=9999
+```
+
+**SSH 模式说明：**
+- 使用 `--ssh` 时，程序会通过 SSH 在远程主机自动执行 `backup-helper --download` 命令
+- 依赖系统已有的 SSH 配置（`~/.ssh/config`、密钥等），无需额外配置
+- 如果指定了 `--stream-port`，在远程的该端口启动服务；如果未指定，自动发现可用端口
+- 传输完成后自动清理远程进程
+- 类似 `rsync -e ssh` 的使用方式，如果 SSH 密钥已配置好，直接就能用
 
 ### 6. 仅做参数检查（不备份）
 

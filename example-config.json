@@ -23,5 +23,6 @@
   "existedBackup": "your-existed-backup-file-path",
   "estimatedSize": 0,
   "ioLimit": 0,
-  "downloadOutput": ""
+  "downloadOutput": "",
+  "remoteOutput": ""
 }

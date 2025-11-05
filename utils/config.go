@@ -33,6 +33,7 @@ type Config struct {
 	EstimatedSize   int64   `json:"estimatedSize"`
 	IOLimit         int64   `json:"ioLimit"`
 	DownloadOutput  string  `json:"downloadOutput"`
+	RemoteOutput    string  `json:"remoteOutput"`
 }
 
 func LoadConfig(path string) (*Config, error) {

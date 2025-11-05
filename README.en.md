@@ -73,6 +73,8 @@ A high-efficiency MySQL physical backup and OSS upload tool. Supports Percona Xt
 | --mode             | Backup mode: `oss` (upload to OSS) or `stream` (push to TCP)     |
 | --stream-port      | Local port for streaming mode (e.g. 9999, 0 = auto-find available port), or remote port when --stream-host is specified |
 | --stream-host      | Remote host IP (e.g., '192.168.1.100'). When specified, actively connects to remote server to push data, similar to `nc host port` |
+| --ssh              | Use SSH to automatically start receiver on remote host (requires --stream-host, relies on system SSH config) |
+| --remote-output    | Remote output path for SSH mode (default: auto-generated) |
 | --compress         | Enable compression                                               |
 | --compress-type    | Compression type: `qp` (qpress), `zstd`                          |
 | --lang             | Language: `zh` (Chinese) or `en` (English), auto-detect if unset |
@@ -148,6 +150,38 @@ nc 192.168.1.100 54321 > streamed-backup.xb
 ```
 
 This achieves similar functionality to `xtrabackup | nc 192.168.1.100 9999`.
+
+### 5.3. SSH Mode: Automatically start receiver on remote host
+
+If you have SSH access, you can use `--ssh` to automatically start the receiver on the remote host:
+
+```sh
+# SSH mode + auto-discover port (recommended)
+./backup-helper --config config.json --backup --mode=stream \
+    --stream-host=replica-server \
+    --ssh \
+    --remote-output=/backup/mysql_backup.xb \
+    --estimated-size=10GB
+
+# SSH mode + specified port
+./backup-helper --config config.json --backup --mode=stream \
+    --stream-host=replica-server \
+    --ssh \
+    --stream-port=9999 \
+    --remote-output=/backup/mysql_backup.xb
+
+# Traditional mode: requires manually running receiver on remote
+./backup-helper --config config.json --backup --mode=stream \
+    --stream-host=replica-server \
+    --stream-port=9999
+```
+
+**SSH Mode Notes:**
+- When using `--ssh`, the program automatically executes `backup-helper --download` on the remote host via SSH
+- Relies on existing SSH configuration (`~/.ssh/config`, keys, etc.), no additional setup needed
+- If `--stream-port` is specified, starts service on that port; otherwise auto-discovers available port
+- Automatically cleans up remote process after transfer completes
+- Similar to `rsync -e ssh` usage - if SSH keys are configured, it just works
 
 ### 6. Parameter check only (no backup)
 
