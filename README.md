@@ -16,7 +16,7 @@
   - 安装后确保 `xtrabackup` 命令在 PATH 中
 
 ### 可选依赖
-- **zstd**：用于 zstd 压缩（当使用 `--compress-type=zstd` 时）
+- **zstd**：用于 zstd 压缩（当使用 `--compress=zstd` 时）
   - [下载地址](https://github.com/facebook/zstd)
   - 安装后确保 `zstd` 命令在 PATH 中
 
@@ -61,7 +61,7 @@
 ```
 
 - **objectName**：只需指定前缀，最终 OSS 文件名会自动变为 `objectName_YYYYMMDDHHMM后缀`，如 `backup/your-backup_202507181648.xb.zst`
-- **compressType**：压缩类型，可选值：`zstd`、`qp`（qpress）或空字符串（不压缩）
+- **compressType**：压缩类型，可选值：`zstd`、`qp`（qpress）或空字符串/`no`（不压缩）。支持所有模式（oss、stream）
 - **streamPort**：流式传输端口，设为 `0` 表示自动查找可用端口
 - **streamHost**：远程主机 IP，用于主动推送模式
 - **existedBackup**：已存在的备份文件路径，用于上传或流式传输（使用'-'表示从stdin读取）
@@ -85,15 +85,14 @@
 | --backup            | 启动备份流程（否则只做参数检查）                             |
 | --download          | 下载模式：从 TCP 流接收备份数据并保存                       |
 | --output            | 下载模式输出文件路径（使用 '-' 表示输出到 stdout，默认：backup_YYYYMMDDHHMMSS.xb） |
-| --compress-type     | 压缩类型：`zstd` 或 `qp`（qpress），用于下载模式的解压和解包 |
-| --target-dir        | 解包目录：下载后自动解压和解包到指定目录（需要指定 --compress-type） |
+| --compress          | 压缩：`qp`（qpress）、`zstd` 或 `no`（不压缩）。不带值时默认使用 qp。用于下载模式的解压和解包 |
+| --target-dir        | 解包目录：下载后自动解压和解包到指定目录（需要指定 --compress） |
 | --mode              | 备份模式：`oss`（上传到 OSS）或 `stream`（推送到 TCP 端口）  |
 | --stream-port       | 流式推送时监听的本地端口（如 9999，设为 0 则自动查找空闲端口），或指定远程端口（当使用 --stream-host 时） |
 | --stream-host       | 远程主机 IP（如 '192.168.1.100'）。指定后主动连接到远程服务器推送数据，类似 `nc host port` |
 | --ssh               | 使用 SSH 在远程主机自动启动接收服务（需要 --stream-host，依赖系统 SSH 配置） |
 | --remote-output     | SSH 模式下远程保存路径（默认：自动生成） |
-| --compress          | 启用压缩                                                  |
-| --compress-type     | 压缩类型：`qp`（qpress）、`zstd`          |
+| --compress          | 压缩：`qp`（qpress）、`zstd` 或 `no`（不压缩）。不带值时默认使用 qp。支持所有模式（oss、stream）          |
 | --lang              | 语言：`zh`（中文）或 `en`（英文），不指定则自动检测系统语言   |
 | --ai-diagnose=on/off| 备份失败时 AI 诊断，on 为自动诊断（需配置 Qwen API Key），off 为跳过，未指定时交互式询问 |
 | --enable-handshake   | TCP流推送启用握手认证（默认false，可在配置文件设置）         |
@@ -128,9 +127,10 @@ go build -a -o backup-helper main.go
 ### 4. 指定压缩类型
 
 ```sh
-./backup-helper --config config.json --backup --mode=oss --compress-type=zstd
-./backup-helper --config config.json --backup --mode=oss --compress-type=qp
-./backup-helper --config config.json --backup --mode=oss --compress-type=none
+./backup-helper --config config.json --backup --mode=oss --compress=zstd
+./backup-helper --config config.json --backup --mode=oss --compress=qp
+./backup-helper --config config.json --backup --mode=oss --compress=no
+./backup-helper --config config.json --backup --mode=oss --compress
 ```
 
 ### 5. 流式推送（stream 模式）
@@ -210,7 +210,7 @@ nc 192.168.1.100 54321 > streamed-backup.xb
 ### 7. 纯命令行参数（无 config.json）
 
 ```sh
-./backup-helper --host=127.0.0.1 --user=root --password=123456 --port=3306 --backup --mode=oss --compress-type=qp
+./backup-helper --host=127.0.0.1 --user=root --password=123456 --port=3306 --backup --mode=oss --compress=qp
 ```
 
 ### 8. 上传已存在的备份文件到 OSS
@@ -277,16 +277,16 @@ cat backup.xb | ./backup-helper --config config.json --existed-backup - --mode=s
 ./backup-helper --download --stream-port 9999 --output - | xbstream -x -C /path/to/extract/dir
 
 # Zstd 压缩备份：流式解压后解包（推荐方式）
-./backup-helper --download --stream-port 9999 --compress-type zstd --target-dir /path/to/extract/dir
+./backup-helper --download --stream-port 9999 --compress=zstd --target-dir /path/to/extract/dir
 
 # Zstd 压缩备份：流式输出到 stdout（可用于管道到 xbstream）
-./backup-helper --download --stream-port 9999 --compress-type zstd --output - | xbstream -x -C /path/to/extract/dir
+./backup-helper --download --stream-port 9999 --compress=zstd --output - | xbstream -x -C /path/to/extract/dir
 
 # Qpress 压缩备份：自动解压和解包（注意：需要先保存文件，不支持流式解压）
-./backup-helper --download --stream-port 9999 --compress-type qp --target-dir /path/to/extract/dir
+./backup-helper --download --stream-port 9999 --compress=qp --target-dir /path/to/extract/dir
 
 # 保存 zstd 压缩的备份（自动解压）
-./backup-helper --download --stream-port 9999 --compress-type zstd --output my_backup.xb
+./backup-helper --download --stream-port 9999 --compress=zstd --output my_backup.xb
 
 # 带限速下载
 ./backup-helper --download --stream-port 9999 --io-limit 100MB/s
@@ -297,18 +297,18 @@ cat backup.xb | ./backup-helper --config config.json --existed-backup - --mode=s
 
 **下载模式压缩类型说明：**
 
-- **Zstd 压缩（`--compress-type zstd`）**：
+- **Zstd 压缩（`--compress=zstd`）**：
   - 支持流式解压，可直接解压并解包到目录
   - 使用 `--target-dir` 时，自动执行 `zstd -d | xbstream -x`
   - 使用 `--output -` 时，输出解压后的流，可继续管道到 `xbstream`
 
-- **Qpress 压缩（`--compress-type qp`）**：
+- **Qpress 压缩（`--compress=qp` 或 `--compress`）**：
   - **不支持流式解压**（MySQL 5.7 的 xbstream 不支持 `--decompress` 流式操作）
   - 使用 `--target-dir` 时，会先保存压缩文件，然后使用 `xbstream -x` 解包，最后使用 `xtrabackup --decompress` 解压
   - 使用 `--output -` 时，会警告并输出原始压缩流
 
 - **未压缩备份**：
-  - 不指定 `--compress-type` 时，直接保存或解包
+  - 不指定 `--compress` 时，直接保存或解包
   - 使用 `--target-dir` 时，直接使用 `xbstream -x` 解包
 
 ---

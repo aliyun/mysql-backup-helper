@@ -44,7 +44,7 @@ func main() {
 	flag.BoolVar(&doBackup, "backup", false, "Run xtrabackup and upload to OSS")
 	flag.BoolVar(&doDownload, "download", false, "Download backup from TCP stream (listen on port)")
 	flag.StringVar(&downloadOutput, "output", "", "Output file path for download mode (use '-' for stdout, default: backup_YYYYMMDDHHMMSS.xb)")
-	flag.StringVar(&targetDir, "target-dir", "", "Directory to extract backup files (only for xbstream extraction, requires --compress-type)")
+	flag.StringVar(&targetDir, "target-dir", "", "Directory to extract backup files (only for xbstream extraction, requires --compress)")
 	flag.StringVar(&estimatedSizeStr, "estimated-size", "", "Estimated backup size with unit (e.g., '100MB', '1GB', '500KB') or bytes (for progress tracking)")
 	flag.StringVar(&ioLimitStr, "io-limit", "", "IO bandwidth limit with unit (e.g., '100MB/s', '1GB/s', '500KB/s') or bytes per second. Use -1 for unlimited speed")
 	flag.StringVar(&existedBackup, "existed-backup", "", "Path to existing xtrabackup backup file to upload (use '-' for stdin)")
@@ -58,7 +58,7 @@ func main() {
 	flag.IntVar(&streamPort, "stream-port", 0, "Local TCP port for streaming (0 = auto-find available port), or remote port when --stream-host is specified")
 	flag.StringVar(&streamHost, "stream-host", "", "Remote host IP for pushing data (e.g., '192.168.1.100'). When specified, actively connects to remote instead of listening locally")
 	flag.StringVar(&mode, "mode", "oss", "Backup mode: oss (upload to OSS) or stream (push to TCP port)")
-	flag.StringVar(&compressType, "compress-type", "", "Compress type: qp(qpress)/zstd, priority is higher than config file")
+	flag.StringVar(&compressType, "compress", "__NOT_SET__", "Compression: qp(qpress)/zstd/no, or no value (default: qp). Priority is higher than config file")
 	flag.StringVar(&langFlag, "lang", "", "Language: zh (Chinese) or en (English), auto-detect if unset")
 	flag.StringVar(&aiDiagnoseFlag, "ai-diagnose", "", "AI diagnosis on backup failure: on/off. If not set, prompt interactively.")
 	flag.BoolVar(&enableHandshake, "enable-handshake", false, "Enable handshake for TCP streaming (default: false, can be set in config)")
@@ -112,8 +112,28 @@ func main() {
 	if password == "" {
 		password = cfg.MysqlPassword
 	}
-	if compressType == "" && cfg.CompressType != "" {
-		compressType = cfg.CompressType
+	// Handle --compress flag
+	// If compressType is "__NOT_SET__", flag was not passed
+	// If compressType is "" and flag was passed, user passed --compress without value (default to qp)
+	// If compressType has a value, use it
+	if compressType == "__NOT_SET__" {
+		// Flag was not passed, use config or empty
+		if cfg.CompressType != "" {
+			compressType = cfg.CompressType
+		} else {
+			compressType = ""
+		}
+	} else {
+		// Flag was passed
+		if compressType == "" {
+			// --compress was passed but empty value (--compress= or --compress ""), default to qp
+			compressType = "qp"
+		}
+		// Otherwise use the provided value (zstd, qp, no, etc.)
+	}
+	// Normalize: "no" means no compression
+	if compressType == "no" {
+		compressType = ""
 	}
 	if existedBackup == "" && cfg.ExistedBackup != "" {
 		existedBackup = cfg.ExistedBackup
@@ -170,6 +190,27 @@ func main() {
 		if downloadCompressType == "" && cfg.CompressType != "" {
 			downloadCompressType = cfg.CompressType
 		}
+		// Normalize: "no" or empty string means no compression
+		if downloadCompressType == "no" {
+			downloadCompressType = ""
+		}
+
+		// Check compression dependencies early (before starting transfer)
+		if downloadCompressType != "" {
+			if targetDir != "" {
+				// Extraction mode: check extraction dependencies
+				if err := utils.CheckExtractionDependencies(downloadCompressType); err != nil {
+					i18n.Printf("Error: %v\n", err)
+					os.Exit(1)
+				}
+			} else {
+				// Save mode: check compression dependencies (download mode, not backup mode)
+				if err := utils.CheckCompressionDependencies(downloadCompressType, false); err != nil {
+					i18n.Printf("Error: %v\n", err)
+					os.Exit(1)
+				}
+			}
+		}
 
 		// Determine output file path
 		outputPath := downloadOutput
@@ -225,7 +266,7 @@ func main() {
 		if targetDir != "" {
 			// Extraction mode: decompress and extract
 			if downloadCompressType == "" {
-				i18n.Printf("Error: --target-dir requires --compress-type to be specified\n")
+				i18n.Printf("Error: --target-dir requires --compress to be specified\n")
 				os.Exit(1)
 			}
 			if outputPath == "-" {
@@ -335,6 +376,22 @@ func main() {
 			i18n.Printf("[backup-helper] IO rate limit set to: %s/s (default)\n", formatBytes(cfg.GetRateLimit()))
 		}
 
+		// Check compression dependencies early (before starting backup)
+		effectiveCompressType := compressType
+		if effectiveCompressType == "" && cfg.CompressType != "" {
+			effectiveCompressType = cfg.CompressType
+		}
+		// Normalize: "no" or empty string means no compression
+		if effectiveCompressType == "no" {
+			effectiveCompressType = ""
+		}
+		if effectiveCompressType != "" {
+			if err := utils.CheckCompressionDependencies(effectiveCompressType, true); err != nil {
+				i18n.Printf("Error: %v\n", err)
+				os.Exit(1)
+			}
+		}
+
 		// Check xtrabackup version (run early)
 		mysqlVer := cfg.MysqlVersion
 		utils.CheckXtraBackupVersion(mysqlVer)
@@ -348,23 +405,24 @@ func main() {
 		// 1. Decide objectName suffix and compression param
 		ossObjectName := cfg.ObjectName
 		objectSuffix := ".xb"
-		// compressType default is empty
-		if mode == "stream" {
-			cfg.Compress = false
-			cfg.CompressType = ""
+		// Determine effective compression type (reuse variable from above)
+		if effectiveCompressType == "" && cfg.CompressType != "" {
+			effectiveCompressType = cfg.CompressType
+		}
+		// Normalize: "no" or empty string means no compression
+		if effectiveCompressType == "no" {
+			effectiveCompressType = ""
+		}
+
+		// Set cfg.CompressType based on effectiveCompressType
+		cfg.CompressType = effectiveCompressType
+		switch effectiveCompressType {
+		case "zstd":
+			objectSuffix = ".xb.zst"
+		case "qp":
+			objectSuffix = "_qp.xb"
+		default:
 			objectSuffix = ".xb"
-		} else if cfg.Compress {
-			switch compressType {
-			case "zstd":
-				objectSuffix = ".xb.zst"
-				cfg.CompressType = "zstd"
-			default:
-				objectSuffix = "_qp.xb"
-				cfg.CompressType = ""
-			}
-		} else {
-			objectSuffix = ".xb"
-			cfg.CompressType = ""
 		}
 		timestamp := time.Now().Format("_20060102150405")
 		fullObjectName := ossObjectName + timestamp + objectSuffix
@@ -658,22 +716,25 @@ func main() {
 		// Determine object name suffix based on compression type
 		ossObjectName := cfg.ObjectName
 		objectSuffix := ".xb"
-		if mode == "stream" {
-			cfg.Compress = false
-			cfg.CompressType = ""
+		// Determine effective compression type
+		effectiveCompressType := compressType
+		if effectiveCompressType == "" && cfg.CompressType != "" {
+			effectiveCompressType = cfg.CompressType
+		}
+		// Normalize: "no" or empty string means no compression
+		if effectiveCompressType == "no" {
+			effectiveCompressType = ""
+		}
+
+		// Set cfg.CompressType based on effectiveCompressType
+		cfg.CompressType = effectiveCompressType
+		switch effectiveCompressType {
+		case "zstd":
+			objectSuffix = ".xb.zst"
+		case "qp":
+			objectSuffix = "_qp.xb"
+		default:
 			objectSuffix = ".xb"
-		} else if cfg.Compress {
-			switch compressType {
-			case "zstd":
-				objectSuffix = ".xb.zst"
-				cfg.CompressType = "zstd"
-			default:
-				objectSuffix = "_qp.xb"
-				cfg.CompressType = ""
-			}
-		} else {
-			objectSuffix = ".xb"
-			cfg.CompressType = ""
 		}
 		timestamp := time.Now().Format("_20060102150405")
 		fullObjectName := ossObjectName + timestamp + objectSuffix

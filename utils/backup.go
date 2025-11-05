@@ -13,12 +13,6 @@ import (
 	"github.com/gioco-play/easy-i18n/i18n"
 )
 
-// Config adds Compress field
-// type Config struct {
-//   ...
-//   Compress bool `json:"compress"`
-// }
-
 func ensureLogsDir(logDir string) error {
 	// if log directory is relative path, make it relative to current working directory
 	if !filepath.IsAbs(logDir) {
@@ -154,7 +148,8 @@ func RunXtraBackup(cfg *Config) (io.Reader, *exec.Cmd, string, error) {
 	}
 
 	// Non-zstd branch, always assign cmd
-	if cfg.Compress {
+	// Use cfg.CompressType == "qp" to determine if we need --compress
+	if cfg.CompressType == "qp" {
 		args = append(args, "--compress")
 	}
 	cmd = exec.Command("xtrabackup", args...)

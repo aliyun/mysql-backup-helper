@@ -18,7 +18,6 @@ type Config struct {
 	MysqlPort       int     `json:"mysqlPort"`
 	MysqlUser       string  `json:"mysqlUser"`
 	MysqlPassword   string  `json:"mysqlPassword"`
-	Compress        bool    `json:"compress"`
 	CompressType    string  `json:"compressType"`
 	Mode            string  `json:"mode"`
 	StreamPort      int     `json:"streamPort"`

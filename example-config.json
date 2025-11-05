@@ -11,7 +11,6 @@
   "mysqlPort": 3306,
   "mysqlUser": "root",
   "mysqlPassword": "password",
-  "compress": true,
   "compressType": "zstd",
   "mode": "oss",
   "streamPort": 9999,

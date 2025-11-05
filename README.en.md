@@ -16,7 +16,7 @@ A high-efficiency MySQL physical backup and OSS upload tool. Supports Percona Xt
   - Ensure `xtrabackup` is in your PATH
 
 ### Optional
-- **zstd**: For zstd compression (when using `--compress-type=zstd`)
+- **zstd**: For zstd compression (when using `--compress=zstd`)
   - [Download](https://github.com/facebook/zstd)
   - Ensure `zstd` is in your PATH
 
@@ -61,7 +61,7 @@ A high-efficiency MySQL physical backup and OSS upload tool. Supports Percona Xt
 ```
 
 - **objectName**: Only specify the prefix. The final OSS object will be `objectName_YYYYMMDDHHMM<suffix>`, e.g. `backup/your-backup_202507181648.xb.zst`
-- **compressType**: Compression type, options: `zstd`, `qp` (qpress), or empty string (no compression)
+- **compressType**: Compression type, options: `zstd`, `qp` (qpress), or empty string/`no` (no compression). Supported in all modes (oss, stream)
 - **streamPort**: Streaming port, set to `0` to auto-find available port
 - **streamHost**: Remote host IP for active push mode
 - **existedBackup**: Path to existing backup file for upload or streaming (use '-' for stdin)
@@ -85,15 +85,14 @@ A high-efficiency MySQL physical backup and OSS upload tool. Supports Percona Xt
 | --backup           | Run backup (otherwise only checks parameters)                    |
 | --download         | Download mode: receive backup data from TCP stream and save      |
 | --output           | Output file path for download mode (use '-' for stdout, default: backup_YYYYMMDDHHMMSS.xb) |
-| --compress-type    | Compression type: `zstd` or `qp` (qpress), used for decompression and extraction in download mode |
-| --target-dir       | Extraction directory: automatically decompress and extract to specified directory (requires --compress-type) |
+| --compress          | Compression: `qp` (qpress), `zstd`, or `no` (no compression). Defaults to qp when no value provided. Supported in all modes (oss, stream) |
+| --target-dir       | Extraction directory: automatically decompress and extract to specified directory (requires --compress) |
 | --mode             | Backup mode: `oss` (upload to OSS) or `stream` (push to TCP)     |
 | --stream-port      | Local port for streaming mode (e.g. 9999, 0 = auto-find available port), or remote port when --stream-host is specified |
 | --stream-host      | Remote host IP (e.g., '192.168.1.100'). When specified, actively connects to remote server to push data, similar to `nc host port` |
 | --ssh              | Use SSH to automatically start receiver on remote host (requires --stream-host, relies on system SSH config) |
 | --remote-output    | Remote output path for SSH mode (default: auto-generated) |
-| --compress         | Enable compression                                               |
-| --compress-type    | Compression type: `qp` (qpress), `zstd`                          |
+| --compress    | Compression: `qp` (qpress), `zstd`, or `no` (no compression). Defaults to qp when no value provided. Supported in all modes (oss, stream) |
 | --lang             | Language: `zh` (Chinese) or `en` (English), auto-detect if unset |
 | --ai-diagnose=on/off| AI diagnosis on backup failure. 'on' runs automatically (requires Qwen API Key in config), 'off' skips, unset will prompt interactively. |
 | --enable-handshake   | Enable handshake for TCP streaming (default: false, can be set in config) |
@@ -128,8 +127,10 @@ go build -a -o backup-helper main.go
 ### 4. Specify compression type
 
 ```sh
-./backup-helper --config config.json --backup --mode=oss --compress-type=zstd
-./backup-helper --config config.json --backup --mode=oss --compress-type=qp
+./backup-helper --config config.json --backup --mode=oss --compress=zstd
+./backup-helper --config config.json --backup --mode=oss --compress=qp
+./backup-helper --config config.json --backup --mode=oss --compress=no
+./backup-helper --config config.json --backup --mode=oss --compress
 ```
 
 ### 5. Streaming mode
@@ -209,7 +210,7 @@ If you have SSH access, you can use `--ssh` to automatically start the receiver 
 ### 7. All command-line (no config.json)
 
 ```sh
-./backup-helper --host=127.0.0.1 --user=root --password=123456 --port=3306 --backup --mode=oss --compress-type=qp
+./backup-helper --host=127.0.0.1 --user=root --password=123456 --port=3306 --backup --mode=oss --compress=qp
 ```
 
 ### 8. Upload existing backup file to OSS
@@ -276,16 +277,16 @@ cat backup.xb | ./backup-helper --config config.json --existed-backup - --mode=s
 ./backup-helper --download --stream-port 9999 --output - | xbstream -x -C /path/to/extract/dir
 
 # Zstd compressed backup: stream decompress then extract (recommended)
-./backup-helper --download --stream-port 9999 --compress-type zstd --target-dir /path/to/extract/dir
+./backup-helper --download --stream-port 9999 --compress=zstd --target-dir /path/to/extract/dir
 
 # Zstd compressed backup: stream to stdout (can be piped to xbstream)
-./backup-helper --download --stream-port 9999 --compress-type zstd --output - | xbstream -x -C /path/to/extract/dir
+./backup-helper --download --stream-port 9999 --compress=zstd --output - | xbstream -x -C /path/to/extract/dir
 
 # Qpress compressed backup: auto decompress and extract (note: requires saving to file first, no stream decompression)
-./backup-helper --download --stream-port 9999 --compress-type qp --target-dir /path/to/extract/dir
+./backup-helper --download --stream-port 9999 --compress=qp --target-dir /path/to/extract/dir
 
 # Save zstd compressed backup (auto decompress)
-./backup-helper --download --stream-port 9999 --compress-type zstd --output my_backup.xb
+./backup-helper --download --stream-port 9999 --compress=zstd --output my_backup.xb
 
 # Download with rate limiting
 ./backup-helper --download --stream-port 9999 --io-limit 100MB/s
@@ -296,18 +297,18 @@ cat backup.xb | ./backup-helper --config config.json --existed-backup - --mode=s
 
 **Download mode compression type notes:**
 
-- **Zstd compression (`--compress-type zstd`)**:
+- **Zstd compression (`--compress=zstd`)**:
   - Supports stream decompression, can directly decompress and extract to directory
   - When using `--target-dir`, automatically executes `zstd -d | xbstream -x`
   - When using `--output -`, outputs decompressed stream that can be piped to `xbstream`
 
-- **Qpress compression (`--compress-type qp`)**:
+- **Qpress compression (`--compress=qp` or `--compress`)**:
   - **Does not support stream decompression** (xbstream in MySQL 5.7 does not support `--decompress` in stream mode)
   - When using `--target-dir`, saves compressed file first, then uses `xbstream -x` to extract, finally uses `xtrabackup --decompress` to decompress
   - When using `--output -`, warns and outputs raw compressed stream
 
 - **Uncompressed backup**:
-  - When `--compress-type` is not specified, saves or extracts directly
+  - When `--compress` is not specified, saves or extracts directly
   - When using `--target-dir`, directly uses `xbstream -x` to extract
 
 ---
