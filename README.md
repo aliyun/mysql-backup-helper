@@ -78,6 +78,11 @@
 - `--close-files=1`：自动启用，用于处理大量表的情况
 - 文件描述符限制：自动设置为 655360（通过 ulimit）
 
+**兼容性说明**：
+- 工具支持广泛的 xtrabackup/xbstream 版本，包括不支持 `--version` 参数的旧版本（如 xbstream 2.4.12）
+- 工具会使用多重回退机制验证二进制文件的可执行性（`--version` → `-h` → `--help` → 无参数运行）
+- `--prepare` 模式不需要 xbstream，仅需要 xtrabackup
+
 ---
 
 ## 命令行参数

@@ -73,7 +73,7 @@ func RunXtraBackup(cfg *Config, db *sql.DB, logCtx *LogContext) (io.Reader, *exe
 	}
 
 	// Resolve xtrabackup and xbstream paths
-	xtrabackupPath, _, err := ResolveXtrabackupPath(cfg)
+	xtrabackupPath, _, err := ResolveXtrabackupPath(cfg, true)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -229,7 +229,7 @@ func RunXtrabackupPrepare(cfg *Config, targetDir string, db *sql.DB, logCtx *Log
 	}
 
 	// Resolve xtrabackup path
-	xtrabackupPath, _, err := ResolveXtrabackupPath(cfg)
+	xtrabackupPath, _, err := ResolveXtrabackupPath(cfg, false)
 	if err != nil {
 		return nil, err
 	}

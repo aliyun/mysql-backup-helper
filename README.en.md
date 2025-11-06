@@ -78,6 +78,11 @@ A high-efficiency MySQL physical backup and OSS upload tool. Supports Percona Xt
 - `--close-files=1`: Automatically enabled to handle large number of tables
 - File descriptor limit: Automatically set to 655360 (via ulimit)
 
+**Compatibility Notes**:
+- The tool supports a wide range of xtrabackup/xbstream versions, including older versions that don't support the `--version` flag (e.g., xbstream 2.4.12)
+- The tool uses multiple fallback methods to verify binary executability (`--version` → `-h` → `--help` → run without arguments)
+- `--prepare` mode does not require xbstream, only xtrabackup is needed
+
 ---
 
 ## Command-line Arguments

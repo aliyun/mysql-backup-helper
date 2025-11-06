@@ -119,7 +119,7 @@ func getVersion(value string) Version {
 
 func CheckXtraBackupVersion(mysqlVer Version, cfg *Config) {
 	// Resolve xtrabackup path
-	xtrabackupPath, _, err := ResolveXtrabackupPath(cfg)
+	xtrabackupPath, _, err := ResolveXtrabackupPath(cfg, false)
 	if err != nil {
 		msg := fmt.Sprintf("[Error] Cannot resolve xtrabackup path: %v", err)
 		i18n.Printf(color.RedString("%s\n", msg))
@@ -175,7 +175,7 @@ func CheckXtraBackupVersion(mysqlVer Version, cfg *Config) {
 // GetXtrabackupVersion Extract xtrabackup major.minor.patch-revision four-part version number
 func GetXtrabackupVersion(cfg *Config) [4]int {
 	// Resolve xtrabackup path
-	xtrabackupPath, _, err := ResolveXtrabackupPath(cfg)
+	xtrabackupPath, _, err := ResolveXtrabackupPath(cfg, false)
 	if err != nil {
 		return [4]int{0, 0, 0, 0}
 	}

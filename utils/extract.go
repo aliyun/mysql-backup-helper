@@ -109,7 +109,7 @@ func extractZstdStream(reader io.Reader, targetDir string, parallel int, cfg *Co
 	}
 
 	// Resolve xbstream path
-	_, xbstreamPath, err := ResolveXtrabackupPath(cfg)
+	_, xbstreamPath, err := ResolveXtrabackupPath(cfg, true)
 	if err != nil {
 		return err
 	}
@@ -240,7 +240,7 @@ func extractZstdStream(reader io.Reader, targetDir string, parallel int, cfg *Co
 // So we need to save to file first, then extract and decompress
 func extractQpressStream(reader io.Reader, targetDir string, outputPath string, parallel int, cfg *Config, logCtx *LogContext) error {
 	// Resolve xtrabackup and xbstream paths
-	xtrabackupPath, xbstreamPath, err := ResolveXtrabackupPath(cfg)
+	xtrabackupPath, xbstreamPath, err := ResolveXtrabackupPath(cfg, true)
 	if err != nil {
 		return err
 	}
@@ -353,7 +353,7 @@ func extractQpressStream(reader io.Reader, targetDir string, outputPath string, 
 // extractXbstream extracts uncompressed xbstream backup
 func extractXbstream(reader io.Reader, targetDir string, parallel int, cfg *Config, logCtx *LogContext) error {
 	// Resolve xbstream path
-	_, xbstreamPath, err := ResolveXtrabackupPath(cfg)
+	_, xbstreamPath, err := ResolveXtrabackupPath(cfg, true)
 	if err != nil {
 		return err
 	}
