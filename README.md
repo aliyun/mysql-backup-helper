@@ -100,7 +100,7 @@
 | --remote-output     | SSH 模式下远程保存路径（默认：自动生成） |
 | --compress          | 压缩：`qp`（qpress）、`zstd` 或 `no`（不压缩）。不带值时默认使用 qp。支持所有模式（oss、stream）          |
 | --lang              | 语言：`zh`（中文）或 `en`（英文），不指定则自动检测系统语言   |
-| --ai-diagnose=on/off| 备份失败时 AI 诊断，on 为自动诊断（需配置 Qwen API Key），off 为跳过，未指定时交互式询问 |
+| --ai-diagnose=on/off| 操作失败时 AI 诊断，on 为自动诊断（需配置 Qwen API Key），off 为跳过，未指定时交互式询问。支持所有模块（BACKUP、PREPARE、TCP、OSS、EXTRACT等） |
 | --enable-handshake   | TCP流推送启用握手认证（默认false，可在配置文件设置）         |
 | --stream-key         | TCP流推送握手密钥（默认空，可在配置文件设置）                |
 | --existed-backup     | 已存在的xtrabackup备份文件路径，用于上传或流式传输（使用'-'表示从stdin读取） |
