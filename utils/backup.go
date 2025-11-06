@@ -78,6 +78,12 @@ func RunXtraBackup(cfg *Config, db *sql.DB) (io.Reader, *exec.Cmd, string, error
 	}
 	cleanOldLogs(cfg.LogDir, 10)
 
+	// Check for MySQL config file first (must be first argument if present)
+	var defaultsFile string
+	if db != nil {
+		defaultsFile = GetMySQLConfigFile(db)
+	}
+
 	args := []string{
 		"--backup",
 		fmt.Sprintf("--host=%s", cfg.MysqlHost),
@@ -96,12 +102,9 @@ func RunXtraBackup(cfg *Config, db *sql.DB) (io.Reader, *exec.Cmd, string, error
 		"--lock-ddl=0",
 	}
 
-	// Add --defaults-file if config file is found
-	if db != nil {
-		configFile := GetMySQLConfigFile(db)
-		if configFile != "" {
-			args = append(args, fmt.Sprintf("--defaults-file=%s", configFile))
-		}
+	// Prepend --defaults-file if config file is found (must be first argument)
+	if defaultsFile != "" {
+		args = append([]string{fmt.Sprintf("--defaults-file=%s", defaultsFile)}, args...)
 	}
 
 	// Add --parallel (default is 4)
