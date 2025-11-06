@@ -72,7 +72,7 @@ A high-efficiency MySQL physical backup and OSS upload tool. Supports Percona Xt
 - All config fields can be overridden by command-line arguments. Command-line arguments take precedence over config.
 
 **Note**: The tool automatically handles the following xtrabackup options without user configuration:
-- `--defaults-file`: Automatically retrieved from MySQL connection (my.cnf path)
+- `--defaults-file`: Automatically retrieved from MySQL connection (my.cnf path) and passed as the first argument to xtrabackup
 - `--close-files=1`: Automatically enabled to handle large number of tables
 - File descriptor limit: Automatically set to 655360 (via ulimit)
 

@@ -72,7 +72,7 @@
 - 其它参数可通过命令行覆盖，命令行参数优先于配置文件。
 
 **注意**：工具会自动处理以下 xtrabackup 选项，无需用户配置：
-- `--defaults-file`：自动从 MySQL 连接获取配置文件路径（my.cnf）
+- `--defaults-file`：自动从 MySQL 连接获取配置文件路径（my.cnf），并作为第一个参数传递给 xtrabackup
 - `--close-files=1`：自动启用，用于处理大量表的情况
 - 文件描述符限制：自动设置为 655360（通过 ulimit）
 
