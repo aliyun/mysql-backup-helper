@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -54,6 +55,29 @@ func promptOverwrite(targetDir string) bool {
 	input = strings.TrimSpace(strings.ToLower(input))
 
 	return input == "y" || input == "yes"
+}
+
+// clearDirectory removes all files and subdirectories in the given directory
+func clearDirectory(dir string) error {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return err
+	}
+
+	for _, entry := range entries {
+		path := filepath.Join(dir, entry.Name())
+		if entry.IsDir() {
+			if err := os.RemoveAll(path); err != nil {
+				return err
+			}
+		} else {
+			if err := os.Remove(path); err != nil {
+				return err
+			}
+		}
+	}
+
+	return nil
 }
 
 func main() {
@@ -478,7 +502,15 @@ func main() {
 							os.Exit(0)
 						}
 						logCtx.WriteLog("DOWNLOAD", "User confirmed overwrite for directory: %s", targetDir)
-						i18n.Printf("Proceeding with extraction (existing files may be overwritten)...\n")
+						i18n.Printf("Clearing target directory...\n")
+						logCtx.WriteLog("DOWNLOAD", "Clearing target directory: %s", targetDir)
+						if err := clearDirectory(targetDir); err != nil {
+							logCtx.WriteLog("DOWNLOAD", "Failed to clear target directory: %v", err)
+							i18n.Printf("Error: Failed to clear target directory: %v\n", err)
+							os.Exit(1)
+						}
+						logCtx.WriteLog("DOWNLOAD", "Target directory cleared successfully")
+						i18n.Printf("Target directory cleared. Proceeding with extraction...\n")
 					}
 				} else {
 					logCtx.WriteLog("DOWNLOAD", "Target path exists but is not a directory: %s", targetDir)
