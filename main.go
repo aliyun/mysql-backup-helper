@@ -40,6 +40,7 @@ func main() {
 	var useSSH bool
 	var remoteOutput string
 	var targetDir string
+	var parallel int
 
 	flag.BoolVar(&doBackup, "backup", false, "Run xtrabackup and upload to OSS")
 	flag.BoolVar(&doDownload, "download", false, "Download backup from TCP stream (listen on port)")
@@ -65,6 +66,7 @@ func main() {
 	flag.StringVar(&streamKey, "stream-key", "", "Handshake key for TCP streaming (default: empty, can be set in config)")
 	flag.BoolVar(&useSSH, "ssh", false, "Use SSH to start receiver on remote host (requires --stream-host)")
 	flag.StringVar(&remoteOutput, "remote-output", "", "Remote output path when using SSH mode (default: auto-generated)")
+	flag.IntVar(&parallel, "parallel", 0, "Number of parallel threads for xtrabackup (default: 4)")
 
 	flag.Parse()
 
@@ -161,6 +163,14 @@ func main() {
 		cfg.IOLimit = parsedLimit
 	}
 	// cfg.IOLimit now contains: -1 (unlimited), 0 (use default), or >0 (specified value)
+
+	// Parse parallel from command line or config
+	if parallel > 0 {
+		cfg.Parallel = parallel
+	} else if parallel == 0 && cfg.Parallel == 0 {
+		// Use default (4) if not specified in command line or config
+		cfg.Parallel = 4
+	}
 
 	// 4. Handle --download mode
 	if doDownload {
@@ -434,7 +444,7 @@ func main() {
 		timestamp := time.Now().Format("_20060102150405")
 		fullObjectName := ossObjectName + timestamp + objectSuffix
 
-		reader, cmd, logFileName, err := utils.RunXtraBackup(cfg)
+		reader, cmd, logFileName, err := utils.RunXtraBackup(cfg, db)
 		if err != nil {
 			i18n.Printf("Run xtrabackup error: %v\n", err)
 			os.Exit(1)

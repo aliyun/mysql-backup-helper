@@ -1,6 +1,7 @@
 package utils
 
 import (
+	"database/sql"
 	"fmt"
 	"io"
 	"os"
@@ -8,6 +9,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/gioco-play/easy-i18n/i18n"
@@ -69,7 +71,8 @@ func cleanOldLogs(logDir string, keep int) error {
 }
 
 // RunXtraBackup calls xtrabackup, returns backup data io.Reader, cmd, log file name and error
-func RunXtraBackup(cfg *Config) (io.Reader, *exec.Cmd, string, error) {
+// db is used to get MySQL config file path and must be a valid MySQL connection
+func RunXtraBackup(cfg *Config, db *sql.DB) (io.Reader, *exec.Cmd, string, error) {
 	if err := ensureLogsDir(cfg.LogDir); err != nil {
 		return nil, nil, "", err
 	}
@@ -84,13 +87,42 @@ func RunXtraBackup(cfg *Config) (io.Reader, *exec.Cmd, string, error) {
 		"--stream=xbstream",
 		"--backup-lock-timeout=120",
 		"--backup-lock-retry-count=0",
-		"--close-files=0",
+		"--close-files=1", // Enable close-files to handle large number of tables
 		"--ftwrl-wait-timeout=60",
 		"--ftwrl-wait-threshold=60",
 		"--ftwrl-wait-query-type=ALL",
 		"--kill-long-queries-timeout=0",
 		"--kill-long-query-type=SELECT",
 		"--lock-ddl=0",
+	}
+
+	// Add --defaults-file if config file is found
+	if db != nil {
+		configFile := GetMySQLConfigFile(db)
+		if configFile != "" {
+			args = append(args, fmt.Sprintf("--defaults-file=%s", configFile))
+		}
+	}
+
+	// Add --parallel (default is 4)
+	parallel := cfg.Parallel
+	if parallel == 0 {
+		parallel = 4
+	}
+	args = append(args, fmt.Sprintf("--parallel=%d", parallel))
+
+	// Set ulimit for file descriptors (655360)
+	// Set the limit for current process, child processes will inherit
+	var rlimit syscall.Rlimit
+	if err := syscall.Getrlimit(syscall.RLIMIT_NOFILE, &rlimit); err == nil {
+		if rlimit.Cur < 655360 {
+			rlimit.Cur = 655360
+			if rlimit.Max < 655360 {
+				rlimit.Max = 655360
+			}
+			// Try to set the limit (may fail if not enough privileges)
+			syscall.Setrlimit(syscall.RLIMIT_NOFILE, &rlimit)
+		}
 	}
 
 	var cmd *exec.Cmd

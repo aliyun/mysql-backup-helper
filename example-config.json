@@ -28,5 +28,6 @@
   "estimatedSize": 0,
   "ioLimit": 0,
   "downloadOutput": "",
-  "remoteOutput": ""
+  "remoteOutput": "",
+  "parallel": 4
 }

@@ -32,6 +32,7 @@ type Config struct {
 	IOLimit         int64   `json:"ioLimit"`
 	DownloadOutput  string  `json:"downloadOutput"`
 	RemoteOutput    string  `json:"remoteOutput"`
+	Parallel        int     `json:"parallel"`
 }
 
 func LoadConfig(path string) (*Config, error) {
@@ -57,6 +58,9 @@ func (c *Config) SetDefaults() {
 	}
 	if c.LogDir == "" {
 		c.LogDir = "/var/log/mysql-backup-helper"
+	}
+	if c.Parallel == 0 {
+		c.Parallel = 4 // Default parallel threads for xtrabackup
 	}
 }
 
