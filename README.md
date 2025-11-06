@@ -327,6 +327,11 @@ cat backup.xb | ./backup-helper --config config.json --existed-backup - --mode=s
 ./backup-helper --download --stream-port 9999 --estimated-size 1GB
 ```
 
+**注意**：
+- 如果 `--target-dir` 指定的目录已存在且不为空，程序会询问是否覆盖现有文件
+- 输入 `y` 或 `yes` 继续提取（可能覆盖现有文件）
+- 输入 `n` 或任何其他值取消提取并退出
+
 **下载模式压缩类型说明：**
 
 - **Zstd 压缩（`--compress=zstd`）**：

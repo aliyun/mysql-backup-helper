@@ -21,6 +21,41 @@ func contains(s, substr string) bool {
 	return strings.Contains(strings.ToLower(s), strings.ToLower(substr))
 }
 
+// isDirEmpty checks if a directory is empty
+func isDirEmpty(dir string) (bool, error) {
+	info, err := os.Stat(dir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return true, nil // Directory doesn't exist, consider it empty
+		}
+		return false, err
+	}
+
+	if !info.IsDir() {
+		return false, fmt.Errorf("%s is not a directory", dir)
+	}
+
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return false, err
+	}
+
+	return len(entries) == 0, nil
+}
+
+// promptOverwrite asks user if they want to overwrite existing files in targetDir
+func promptOverwrite(targetDir string) bool {
+	i18n.Printf("Warning: Target directory '%s' already exists and is not empty.\n", targetDir)
+	i18n.Printf("Extracting to this directory may overwrite existing files.\n")
+	i18n.Printf("Do you want to continue? (y/n): ")
+
+	var input string
+	fmt.Scanln(&input)
+	input = strings.TrimSpace(strings.ToLower(input))
+
+	return input == "y" || input == "yes"
+}
+
 func main() {
 	utils.InitI18nAuto()
 
@@ -425,6 +460,33 @@ func main() {
 				i18n.Printf("Error: --target-dir cannot be used with --output -\n")
 				os.Exit(1)
 			}
+
+			// Check if target directory exists and is not empty
+			if info, err := os.Stat(targetDir); err == nil {
+				if info.IsDir() {
+					empty, err := isDirEmpty(targetDir)
+					if err != nil {
+						logCtx.WriteLog("DOWNLOAD", "Failed to check target directory: %v", err)
+						i18n.Printf("Error: Failed to check target directory: %v\n", err)
+						os.Exit(1)
+					}
+					if !empty {
+						// Directory exists and is not empty, ask user for confirmation
+						if !promptOverwrite(targetDir) {
+							logCtx.WriteLog("DOWNLOAD", "User cancelled extraction to non-empty directory: %s", targetDir)
+							i18n.Printf("Extraction cancelled.\n")
+							os.Exit(0)
+						}
+						logCtx.WriteLog("DOWNLOAD", "User confirmed overwrite for directory: %s", targetDir)
+						i18n.Printf("Proceeding with extraction (existing files may be overwritten)...\n")
+					}
+				} else {
+					logCtx.WriteLog("DOWNLOAD", "Target path exists but is not a directory: %s", targetDir)
+					i18n.Printf("Error: Target path '%s' exists but is not a directory\n", targetDir)
+					os.Exit(1)
+				}
+			}
+			// If directory doesn't exist, it will be created by MkdirAll in extract functions
 
 			// Set default output path if not specified (for qpress temp file)
 			if outputPath == "" && downloadCompressType == "qp" {

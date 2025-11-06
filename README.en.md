@@ -327,6 +327,11 @@ After backup is complete, execute prepare to make the backup ready for restore:
 ./backup-helper --download --stream-port 9999 --estimated-size 1GB
 ```
 
+**Note**:
+- If the directory specified by `--target-dir` already exists and is not empty, the program will prompt you to confirm overwriting existing files
+- Enter `y` or `yes` to continue extraction (may overwrite existing files)
+- Enter `n` or any other value to cancel extraction and exit
+
 **Download mode compression type notes:**
 
 - **Zstd compression (`--compress=zstd`)**:
