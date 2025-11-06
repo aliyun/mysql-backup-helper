@@ -347,7 +347,42 @@ After backup is complete, execute prepare to make the backup ready for restore:
 
 ## Logging & Object Naming
 
-- All backup logs are saved in the `logs/` directory, only the latest 10 logs are kept.
+### Unified Logging System
+
+The tool uses a unified logging system that records all critical operations into a single log file:
+
+- **Log File Naming**: `backup-helper-{timestamp}.log` (e.g., `backup-helper-20251106105903.log`)
+- **Log Storage Location**: Defaults to `/var/log/mysql-backup-helper`, can be specified via `--config` or `logDir` in config file (supports both relative and absolute paths)
+- **Log Content**: Unified recording of all operation steps
+  - **[BACKUP]**: xtrabackup backup operations
+  - **[PREPARE]**: xtrabackup prepare operations
+  - **[TCP]**: TCP stream transfers (send/receive)
+  - **[OSS]**: OSS upload operations
+  - **[XBSTREAM]**: xbstream extraction operations
+  - **[DECOMPRESS]**: Decompression operations (zstd/qpress)
+  - **[EXTRACT]**: Extraction operations
+  - **[SYSTEM]**: System-level logs
+
+- **Log Format**: Each log entry includes timestamp and module prefix, format: `[YYYY-MM-DD HH:MM:SS] [MODULE] message content`
+- **Log Cleanup**: Automatically cleans old logs, keeping only the latest 10 log files
+- **Error Handling**:
+  - On operation completion or failure, displays log file location in console
+  - On failure, automatically extracts error summary and displays in console
+  - All modules support AI diagnosis (requires Qwen API Key configuration)
+
+Example log content:
+```
+[2025-11-06 10:59:03] [SYSTEM] === MySQL Backup Helper Log Started ===
+[2025-11-06 10:59:03] [SYSTEM] Timestamp: 2025-11-06 10:59:03
+[2025-11-06 10:59:03] [BACKUP] Starting backup operation
+[2025-11-06 10:59:03] [BACKUP] Command: xtrabackup --backup --stream=xbstream ...
+[2025-11-06 10:59:03] [TCP] Listening on 192.168.1.100:9999
+[2025-11-06 10:59:03] [TCP] Client connected
+[2025-11-06 10:59:03] [TCP] Transfer started
+```
+
+### OSS Object Naming
+
 - OSS object names are auto-appended with a timestamp, e.g. `backup/your-backup_202507181648.xb.zst`, for easy archiving and lookup.
 
 ## Progress Tracking
@@ -412,7 +447,8 @@ Progress: 800 MB - 96.1 MB/s - Duration: 8.3s
 - **zstd not installed**: Please install zstd and ensure it is in your PATH.
 - **OSS upload failed**: Check OSS-related config parameters.
 - **MySQL connection failed**: Check DB host, port, username, password.
-- **Log accumulation**: The program auto-cleans the logs directory, keeping only the latest 10 logs.
+- **Log accumulation**: The program auto-cleans the log directory, keeping only the latest 10 log files.
+- **Log location**: On operation completion or failure, displays the full path to the log file in the console for troubleshooting.
 
 ---
 

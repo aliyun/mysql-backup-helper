@@ -347,7 +347,42 @@ cat backup.xb | ./backup-helper --config config.json --existed-backup - --mode=s
 
 ## 日志与对象命名
 
-- 所有备份日志自动保存在 `logs/` 目录，仅保留最近 10 个日志文件。
+### 统一日志系统
+
+工具采用统一日志系统，将所有关键操作的日志记录到单个日志文件中：
+
+- **日志文件命名**：`backup-helper-{timestamp}.log`（如 `backup-helper-20251106105903.log`）
+- **日志存储位置**：默认在 `/var/log/mysql-backup-helper`，可通过 `--config` 或配置文件中的 `logDir` 指定（支持相对路径和绝对路径）
+- **日志内容**：统一记录所有操作步骤
+  - **[BACKUP]**：xtrabackup 备份操作
+  - **[PREPARE]**：xtrabackup prepare 操作
+  - **[TCP]**：TCP 流传输（发送/接收）
+  - **[OSS]**：OSS 上传操作
+  - **[XBSTREAM]**：xbstream 解包操作
+  - **[DECOMPRESS]**：解压缩操作（zstd/qpress）
+  - **[EXTRACT]**：提取操作
+  - **[SYSTEM]**：系统级别的日志
+
+- **日志格式**：每条日志包含时间戳和模块前缀，格式为 `[YYYY-MM-DD HH:MM:SS] [MODULE] 消息内容`
+- **日志清理**：自动清理旧日志，仅保留最近 10 个日志文件
+- **错误处理**：
+  - 操作完成或失败时，会在控制台显示日志文件位置
+  - 失败时自动提取错误摘要并显示在控制台
+  - 所有模块支持 AI 诊断（需配置 Qwen API Key）
+
+示例日志内容：
+```
+[2025-11-06 10:59:03] [SYSTEM] === MySQL Backup Helper Log Started ===
+[2025-11-06 10:59:03] [SYSTEM] Timestamp: 2025-11-06 10:59:03
+[2025-11-06 10:59:03] [BACKUP] Starting backup operation
+[2025-11-06 10:59:03] [BACKUP] Command: xtrabackup --backup --stream=xbstream ...
+[2025-11-06 10:59:03] [TCP] Listening on 192.168.1.100:9999
+[2025-11-06 10:59:03] [TCP] Client connected
+[2025-11-06 10:59:03] [TCP] Transfer started
+```
+
+### OSS 对象命名
+
 - OSS 对象名自动加时间戳，如 `backup/your-backup_202507181648.xb.zst`，便于归档和查找。
 
 ## 进度跟踪
@@ -412,7 +447,8 @@ Progress: 800 MB - 96.1 MB/s - Duration: 8.3s
 - **zstd 未安装**：请先安装 zstd 并确保在 PATH 中。
 - **OSS 上传失败**：请检查配置文件中的 OSS 相关参数。
 - **MySQL 连接失败**：请检查数据库主机、端口、用户名、密码。
-- **日志堆积**：程序会自动清理 logs 目录，仅保留最近 10 个日志。
+- **日志堆积**：程序会自动清理日志目录，仅保留最近 10 个日志文件。
+- **日志位置**：操作完成或失败时，会在控制台显示日志文件完整路径，便于排查问题。
 
 ---
 
