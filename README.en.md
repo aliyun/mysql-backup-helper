@@ -369,6 +369,7 @@ The tool uses a unified logging system that records all critical operations into
   - On operation completion or failure, displays log file location in console
   - On failure, automatically extracts error summary and displays in console
   - All modules support AI diagnosis (requires Qwen API Key configuration)
+  - **Connection Interruption Detection**: Automatically detects TCP connection interruptions, process abnormal terminations, etc., logs to file and aborts the process to avoid processing incomplete data
 
 Example log content:
 ```
@@ -449,6 +450,7 @@ Progress: 800 MB - 96.1 MB/s - Duration: 8.3s
 - **MySQL connection failed**: Check DB host, port, username, password.
 - **Log accumulation**: The program auto-cleans the log directory, keeping only the latest 10 log files.
 - **Log location**: On operation completion or failure, displays the full path to the log file in the console for troubleshooting.
+- **Transfer interruption**: If the connection is interrupted during transfer, the system will automatically detect and log the error, then abort the process. Please check the log file for detailed error information.
 
 ---
 

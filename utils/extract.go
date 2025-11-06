@@ -5,6 +5,9 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"runtime"
+	"strings"
+	"syscall"
 
 	"github.com/gioco-play/easy-i18n/i18n"
 )
@@ -36,7 +39,18 @@ func ExtractBackupStream(reader io.Reader, compressType string, targetDir string
 		}
 		defer file.Close()
 		_, err = io.Copy(file, reader)
-		return err
+		if err != nil {
+			if logCtx != nil {
+				logCtx.WriteLog("EXTRACT", "Failed to save stream: %v", err)
+				// Check if it's a connection error
+				errStr := err.Error()
+				if strings.Contains(strings.ToLower(errStr), "eof") || strings.Contains(strings.ToLower(errStr), "broken pipe") || strings.Contains(strings.ToLower(errStr), "connection") {
+					logCtx.WriteLog("TCP", "Connection interrupted while saving stream: %v", err)
+				}
+			}
+			return err
+		}
+		return nil
 	}
 
 	// Extraction requested
@@ -148,15 +162,64 @@ func extractZstdStream(reader io.Reader, targetDir string, parallel int, logCtx 
 	zstdErr := zstdCmd.Wait()
 	xbstreamErr := xbstreamCmd.Wait()
 
+	// Check if zstd failed due to connection error
 	if zstdErr != nil {
 		if logCtx != nil {
 			logCtx.WriteLog("DECOMPRESS", "zstd decompression failed: %v", zstdErr)
 		}
+		// Check if it's a connection error (broken pipe or EOF unexpectedly)
+		errStr := zstdErr.Error()
+		if strings.Contains(strings.ToLower(errStr), "broken pipe") || strings.Contains(strings.ToLower(errStr), "eof") || strings.Contains(strings.ToLower(errStr), "connection") {
+			errMsg := fmt.Sprintf("zstd decompression interrupted: connection closed unexpectedly: %v", zstdErr)
+			if logCtx != nil {
+				logCtx.WriteLog("TCP", "Connection interrupted during decompression: %s", errMsg)
+			}
+			return fmt.Errorf("%s", errMsg)
+		}
+		// Check for signal-based termination (Unix-like systems)
+		if runtime.GOOS != "windows" {
+			if exitError, ok := zstdErr.(*exec.ExitError); ok {
+				if status, ok := exitError.Sys().(syscall.WaitStatus); ok {
+					if status.Signaled() && (status.Signal() == syscall.SIGPIPE || status.Signal() == syscall.SIGTERM) {
+						errMsg := fmt.Sprintf("zstd decompression interrupted: connection closed unexpectedly (signal: %s)", status.Signal())
+						if logCtx != nil {
+							logCtx.WriteLog("TCP", "Connection interrupted during decompression: %s", errMsg)
+						}
+						return fmt.Errorf("%s", errMsg)
+					}
+				}
+			}
+		}
 		return fmt.Errorf("zstd decompression failed: %v", zstdErr)
 	}
+
+	// Check if xbstream failed due to connection error
 	if xbstreamErr != nil {
 		if logCtx != nil {
 			logCtx.WriteLog("XBSTREAM", "xbstream extraction failed: %v", xbstreamErr)
+		}
+		// Check if it's a connection error (broken pipe or EOF unexpectedly)
+		errStr := xbstreamErr.Error()
+		if strings.Contains(strings.ToLower(errStr), "broken pipe") || strings.Contains(strings.ToLower(errStr), "eof") || strings.Contains(strings.ToLower(errStr), "connection") {
+			errMsg := fmt.Sprintf("xbstream extraction interrupted: connection closed unexpectedly: %v", xbstreamErr)
+			if logCtx != nil {
+				logCtx.WriteLog("TCP", "Connection interrupted during extraction: %s", errMsg)
+			}
+			return fmt.Errorf("%s", errMsg)
+		}
+		// Check for signal-based termination (Unix-like systems)
+		if runtime.GOOS != "windows" {
+			if exitError, ok := xbstreamErr.(*exec.ExitError); ok {
+				if status, ok := exitError.Sys().(syscall.WaitStatus); ok {
+					if status.Signaled() && (status.Signal() == syscall.SIGPIPE || status.Signal() == syscall.SIGTERM) {
+						errMsg := fmt.Sprintf("xbstream extraction interrupted: connection closed unexpectedly (signal: %s)", status.Signal())
+						if logCtx != nil {
+							logCtx.WriteLog("TCP", "Connection interrupted during extraction: %s", errMsg)
+						}
+						return fmt.Errorf("%s", errMsg)
+					}
+				}
+			}
 		}
 		return fmt.Errorf("xbstream extraction failed: %v", xbstreamErr)
 	}
@@ -204,6 +267,11 @@ func extractQpressStream(reader io.Reader, targetDir string, outputPath string, 
 		os.Remove(outputPath)
 		if logCtx != nil {
 			logCtx.WriteLog("EXTRACT", "Failed to save compressed stream: %v", err)
+			// Check if it's a connection error
+			errStr := err.Error()
+			if strings.Contains(strings.ToLower(errStr), "eof") || strings.Contains(strings.ToLower(errStr), "broken pipe") || strings.Contains(strings.ToLower(errStr), "connection") {
+				logCtx.WriteLog("TCP", "Connection interrupted while saving compressed stream: %v", err)
+			}
 		}
 		return fmt.Errorf("failed to save compressed stream: %v", err)
 	}
@@ -312,12 +380,39 @@ func extractXbstream(reader io.Reader, targetDir string, parallel int, logCtx *L
 	}
 
 	err := xbstreamCmd.Run()
-	if err != nil && logCtx != nil {
-		logCtx.WriteLog("XBSTREAM", "xbstream extraction failed: %v", err)
-	} else if logCtx != nil {
+	if err != nil {
+		if logCtx != nil {
+			logCtx.WriteLog("XBSTREAM", "xbstream extraction failed: %v", err)
+		}
+		// Check if it's a connection error (broken pipe or EOF unexpectedly)
+		errStr := err.Error()
+		if strings.Contains(strings.ToLower(errStr), "broken pipe") || strings.Contains(strings.ToLower(errStr), "eof") || strings.Contains(strings.ToLower(errStr), "connection") {
+			errMsg := fmt.Sprintf("xbstream extraction interrupted: connection closed unexpectedly: %v", err)
+			if logCtx != nil {
+				logCtx.WriteLog("TCP", "Connection interrupted during extraction: %s", errMsg)
+			}
+			return fmt.Errorf("%s", errMsg)
+		}
+		// Check for signal-based termination (Unix-like systems)
+		if runtime.GOOS != "windows" {
+			if exitError, ok := err.(*exec.ExitError); ok {
+				if status, ok := exitError.Sys().(syscall.WaitStatus); ok {
+					if status.Signaled() && (status.Signal() == syscall.SIGPIPE || status.Signal() == syscall.SIGTERM) {
+						errMsg := fmt.Sprintf("xbstream extraction interrupted: connection closed unexpectedly (signal: %s)", status.Signal())
+						if logCtx != nil {
+							logCtx.WriteLog("TCP", "Connection interrupted during extraction: %s", errMsg)
+						}
+						return fmt.Errorf("%s", errMsg)
+					}
+				}
+			}
+		}
+		return fmt.Errorf("xbstream extraction failed: %v", err)
+	}
+	if logCtx != nil {
 		logCtx.WriteLog("XBSTREAM", "xbstream extraction completed successfully")
 	}
-	return err
+	return nil
 }
 
 // ExtractBackupStreamToStdout handles decompression only (for piping to xbstream)

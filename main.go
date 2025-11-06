@@ -16,6 +16,11 @@ import (
 	"golang.org/x/text/language"
 )
 
+// contains checks if a string contains a substring (case-insensitive)
+func contains(s, substr string) bool {
+	return strings.Contains(strings.ToLower(s), strings.ToLower(substr))
+}
+
 func main() {
 	utils.InitI18nAuto()
 
@@ -518,7 +523,17 @@ func main() {
 
 			_, err = io.Copy(os.Stdout, reader)
 			if err != nil {
-				i18n.Fprintf(os.Stderr, "Download error: %v\n", err)
+				// Check if the error is related to connection interruption
+				errStr := err.Error()
+				if contains(errStr, "connection closed unexpectedly") || contains(errStr, "EOF") || contains(errStr, "broken pipe") {
+					logCtx.WriteLog("TCP", "Connection interrupted during transfer: %v", err)
+					i18n.Fprintf(os.Stderr, "Transfer interrupted: connection closed unexpectedly\n")
+					i18n.Fprintf(os.Stderr, "Error details: %v\n", err)
+				} else {
+					logCtx.WriteLog("DOWNLOAD", "Download error: %v", err)
+					i18n.Fprintf(os.Stderr, "Download error: %v\n", err)
+				}
+				i18n.Fprintf(os.Stderr, "Log file: %s\n", logCtx.GetFileName())
 				os.Exit(1)
 			}
 			// Progress tracker will display completion message via closer()

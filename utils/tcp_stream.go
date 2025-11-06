@@ -320,15 +320,20 @@ func StartStreamReceiver(port int, enableHandshake bool, handshakeKey string, to
 			logCtx.WriteLog("TCP", "Remote client connected, no handshake required")
 			logCtx.WriteLog("TCP", "Transfer started")
 		}
+		progressReader := NewProgressReader(conn, tracker, 64*1024)
 		closer := func() {
 			tracker.Complete()
 			conn.Close()
 			ln.Close()
 			if logCtx != nil {
-				logCtx.WriteLog("TCP", "Transfer completed")
+				// Check if transfer completed normally (check if reader encountered EOF or error)
+				if err := progressReader.GetError(); err != nil && err != io.EOF {
+					logCtx.WriteLog("TCP", "Transfer interrupted: connection closed unexpectedly: %v", err)
+				} else {
+					logCtx.WriteLog("TCP", "Transfer completed")
+				}
 			}
 		}
-		progressReader := NewProgressReader(conn, tracker, 64*1024)
 		return struct {
 			io.Reader
 			io.Closer
@@ -366,15 +371,20 @@ func StartStreamReceiver(port int, enableHandshake bool, handshakeKey string, to
 				if logCtx != nil {
 					logCtx.WriteLog("TCP", "Handshake OK, transfer started")
 				}
+				progressReader := NewProgressReader(conn, tracker, 64*1024)
 				closer := func() {
 					tracker.Complete()
 					conn.Close()
 					ln.Close()
 					if logCtx != nil {
-						logCtx.WriteLog("TCP", "Transfer completed")
+						// Check if transfer completed normally (check if reader encountered EOF or error)
+						if err := progressReader.GetError(); err != nil && err != io.EOF {
+							logCtx.WriteLog("TCP", "Transfer interrupted: connection closed unexpectedly: %v", err)
+						} else {
+							logCtx.WriteLog("TCP", "Transfer completed")
+						}
 					}
 				}
-				progressReader := NewProgressReader(conn, tracker, 64*1024)
 				return struct {
 					io.Reader
 					io.Closer

@@ -171,6 +171,7 @@ type ProgressReader struct {
 	reader  io.Reader
 	tracker *ProgressTracker
 	bufSize int
+	err     error // Store the last error encountered
 }
 
 // NewProgressReader creates a new progress reader
@@ -191,13 +192,23 @@ func (pr *ProgressReader) Read(p []byte) (n int, err error) {
 	if n > 0 {
 		pr.tracker.Update(int64(n))
 	}
+	// Store error for later inspection
+	if err != nil {
+		pr.err = err
+	}
 	return n, err
+}
+
+// GetError returns the last error encountered, if any
+func (pr *ProgressReader) GetError() error {
+	return pr.err
 }
 
 // ProgressWriter wraps an io.Writer to track progress
 type ProgressWriter struct {
 	writer  io.Writer
 	tracker *ProgressTracker
+	err     error // Store the last error encountered
 }
 
 // NewProgressWriter creates a new progress writer
@@ -214,7 +225,16 @@ func (pw *ProgressWriter) Write(p []byte) (n int, err error) {
 	if n > 0 {
 		pw.tracker.Update(int64(n))
 	}
+	// Store error for later inspection
+	if err != nil {
+		pw.err = err
+	}
 	return n, err
+}
+
+// GetError returns the last error encountered, if any
+func (pw *ProgressWriter) GetError() error {
+	return pw.err
 }
 
 // FormatBytes formats bytes to human-readable format (exported for use in other packages)
