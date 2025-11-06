@@ -33,6 +33,7 @@ type Config struct {
 	DownloadOutput  string  `json:"downloadOutput"`
 	RemoteOutput    string  `json:"remoteOutput"`
 	Parallel        int     `json:"parallel"`
+	UseMemory       string  `json:"useMemory"`
 }
 
 func LoadConfig(path string) (*Config, error) {
@@ -61,6 +62,9 @@ func (c *Config) SetDefaults() {
 	}
 	if c.Parallel == 0 {
 		c.Parallel = 4 // Default parallel threads for xtrabackup
+	}
+	if c.UseMemory == "" {
+		c.UseMemory = "1G" // Default memory for prepare operation
 	}
 }
 

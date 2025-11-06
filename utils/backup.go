@@ -219,6 +219,80 @@ func RunXtraBackup(cfg *Config, db *sql.DB) (io.Reader, *exec.Cmd, string, error
 	return stdout, cmd, logFileName, nil
 }
 
+// RunXtrabackupPrepare executes xtrabackup --prepare on a backup directory
+// targetDir: directory containing the backup to prepare
+// cfg: configuration containing parallel and useMemory settings
+// db: optional MySQL connection for getting defaults-file (can be nil for prepare)
+func RunXtrabackupPrepare(cfg *Config, targetDir string, db *sql.DB) (*exec.Cmd, string, error) {
+	if err := ensureLogsDir(cfg.LogDir); err != nil {
+		return nil, "", err
+	}
+	cleanOldLogs(cfg.LogDir, 10)
+
+	// Check for MySQL config file first (must be first argument if present)
+	var defaultsFile string
+	if db != nil {
+		defaultsFile = GetMySQLConfigFile(db)
+	}
+
+	args := []string{
+		"--prepare",
+		fmt.Sprintf("--target-dir=%s", targetDir),
+	}
+
+	// Prepend --defaults-file if config file is found (must be first argument)
+	if defaultsFile != "" {
+		args = append([]string{fmt.Sprintf("--defaults-file=%s", defaultsFile)}, args...)
+	}
+
+	// Add --parallel (default is 4)
+	parallel := cfg.Parallel
+	if parallel == 0 {
+		parallel = 4
+	}
+	args = append(args, fmt.Sprintf("--parallel=%d", parallel))
+
+	// Add --use-memory (default is 1G)
+	useMemory := cfg.UseMemory
+	if useMemory == "" {
+		useMemory = "1G"
+	}
+	args = append(args, fmt.Sprintf("--use-memory=%s", useMemory))
+
+	// Set ulimit for file descriptors (655360)
+	var rlimit syscall.Rlimit
+	if err := syscall.Getrlimit(syscall.RLIMIT_NOFILE, &rlimit); err == nil {
+		if rlimit.Cur < 655360 {
+			rlimit.Cur = 655360
+			if rlimit.Max < 655360 {
+				rlimit.Max = 655360
+			}
+			// Try to set the limit (may fail if not enough privileges)
+			syscall.Setrlimit(syscall.RLIMIT_NOFILE, &rlimit)
+		}
+	}
+
+	cmd := exec.Command("xtrabackup", args...)
+
+	cmdStr := "xtrabackup " + strings.Join(args, " ")
+	i18n.Printf("Equivalent shell command: %s\n", cmdStr)
+
+	logFileName := getLogFileName(cfg.LogDir)
+	logFile, err := os.Create(logFileName)
+	if err != nil {
+		return nil, "", err
+	}
+	cmd.Stderr = logFile
+	cmd.Stdout = logFile
+
+	if err := cmd.Start(); err != nil {
+		logFile.Close()
+		return nil, "", err
+	}
+
+	return cmd, logFileName, nil
+}
+
 // CloseBackupLogFile closes cmd's Stderr log file (if it's *os.File)
 func CloseBackupLogFile(cmd *exec.Cmd) {
 	if cmd == nil || cmd.Stderr == nil {

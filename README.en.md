@@ -69,6 +69,7 @@ A high-efficiency MySQL physical backup and OSS upload tool. Supports Percona Xt
 - **remoteOutput**: Remote save path for SSH mode
 - **ioLimit**: IO bandwidth limit (bytes per second), set to `0` to use default (200MB/s), set to `-1` for unlimited speed
 - **parallel**: Number of parallel threads (default: 4), used for xtrabackup backup, compression, decompression, and xbstream extraction operations
+- **useMemory**: Memory to use for prepare operation (default: 1G), supports units (e.g., '1G', '512M')
 - All config fields can be overridden by command-line arguments. Command-line arguments take precedence over config.
 
 **Note**: The tool automatically handles the following xtrabackup options without user configuration:
@@ -89,9 +90,9 @@ A high-efficiency MySQL physical backup and OSS upload tool. Supports Percona Xt
 | --password         | MySQL password (overrides config, prompt if omitted)             |
 | --backup           | Run backup (otherwise only checks parameters)                    |
 | --download         | Download mode: receive backup data from TCP stream and save      |
+| --prepare          | Prepare mode: execute xtrabackup --prepare to make backup ready for restore |
 | --output           | Output file path for download mode (use '-' for stdout, default: backup_YYYYMMDDHHMMSS.xb) |
-| --compress          | Compression: `qp` (qpress), `zstd`, or `no` (no compression). Defaults to qp when no value provided. Supported in all modes (oss, stream) |
-| --target-dir       | Extraction directory: automatically decompress (if needed) and extract to specified directory |
+| --target-dir       | Directory: extraction directory for download mode, backup directory for prepare mode |
 | --mode             | Backup mode: `oss` (upload to OSS) or `stream` (push to TCP)     |
 | --stream-port      | Local port for streaming mode (e.g. 9999, 0 = auto-find available port), or remote port when --stream-host is specified |
 | --stream-host      | Remote host IP (e.g., '192.168.1.100'). When specified, actively connects to remote server to push data, similar to `nc host port` |
@@ -106,6 +107,7 @@ A high-efficiency MySQL physical backup and OSS upload tool. Supports Percona Xt
 | --estimated-size     | Estimated backup size with units (e.g., '100MB', '1GB') or bytes (for progress tracking) |
 | --io-limit           | IO bandwidth limit with units (e.g., '100MB/s', '1GB/s') or bytes per second. Use -1 for unlimited speed |
 | --parallel           | Number of parallel threads (default: 4), used for xtrabackup backup (--parallel), qpress compression (--compress-threads), zstd compression/decompression (-T), xbstream extraction (--parallel), and xtrabackup decompression (--parallel) |
+| --use-memory         | Memory to use for prepare operation (e.g., '1G', '512M'). Default: 1G |
 | --version, -v        | Show version information                                               |
 
 ---
@@ -267,7 +269,31 @@ cat backup.xb | ./backup-helper --config config.json --existed-backup - --mode=s
 # Example: --estimated-size 1073741824 or --estimated-size 1GB
 ```
 
-### 15. Download mode: Receive backup data from TCP stream
+### 15. Prepare backup (Prepare Mode)
+
+After backup is complete, execute prepare to make the backup ready for restore:
+
+```sh
+# Basic usage
+./backup-helper --prepare --target-dir=/path/to/backup
+
+# Specify parallel threads and memory size
+./backup-helper --prepare --target-dir=/path/to/backup --parallel=8 --use-memory=2G
+
+# Use config file
+./backup-helper --config config.json --prepare --target-dir=/path/to/backup
+
+# Optional: Provide MySQL connection info to auto-get --defaults-file
+./backup-helper --prepare --target-dir=/path/to/backup --host=127.0.0.1 --user=root --port=3306
+```
+
+**Notes**:
+- `--target-dir`: Required, specifies the backup directory to prepare
+- `--parallel`: Number of parallel threads, default 4 (can be set in config file or command line)
+- `--use-memory`: Memory to use for prepare operation, default 1G (supports units: G, M, K)
+- `--host`, `--user`, `--port`: Optional, if provided can auto-get `--defaults-file`
+
+### 16. Download mode: Receive backup data from TCP stream
 
 ```sh
 # Download to default file (backup_YYYYMMDDHHMMSS.xb)

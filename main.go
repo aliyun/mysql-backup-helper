@@ -2,6 +2,7 @@ package main
 
 import (
 	"backup-helper/utils"
+	"database/sql"
 	"flag"
 	"fmt"
 	"io"
@@ -20,6 +21,7 @@ func main() {
 
 	var doBackup bool
 	var doDownload bool
+	var doPrepare bool
 	var configPath string
 	var host, user, password string
 	var port int
@@ -41,13 +43,16 @@ func main() {
 	var remoteOutput string
 	var targetDir string
 	var parallel int
+	var useMemory string
 
 	flag.BoolVar(&doBackup, "backup", false, "Run xtrabackup and upload to OSS")
 	flag.BoolVar(&doDownload, "download", false, "Download backup from TCP stream (listen on port)")
+	flag.BoolVar(&doPrepare, "prepare", false, "Prepare backup for restore (xtrabackup --prepare)")
 	flag.StringVar(&downloadOutput, "output", "", "Output file path for download mode (use '-' for stdout, default: backup_YYYYMMDDHHMMSS.xb)")
-	flag.StringVar(&targetDir, "target-dir", "", "Directory to extract backup files (for xbstream extraction)")
+	flag.StringVar(&targetDir, "target-dir", "", "Directory for extraction (download mode) or backup directory (prepare mode)")
 	flag.StringVar(&estimatedSizeStr, "estimated-size", "", "Estimated backup size with unit (e.g., '100MB', '1GB', '500KB') or bytes (for progress tracking)")
 	flag.StringVar(&ioLimitStr, "io-limit", "", "IO bandwidth limit with unit (e.g., '100MB/s', '1GB/s', '500KB/s') or bytes per second. Use -1 for unlimited speed")
+	flag.StringVar(&useMemory, "use-memory", "", "Memory to use for prepare operation (e.g., '1G', '512M'). Default: 1G")
 	flag.StringVar(&existedBackup, "existed-backup", "", "Path to existing xtrabackup backup file to upload (use '-' for stdin)")
 	flag.BoolVar(&showVersion, "version", false, "Show version information")
 	flag.BoolVar(&showVersion, "v", false, "Show version information (shorthand)")
@@ -172,7 +177,73 @@ func main() {
 		cfg.Parallel = 4
 	}
 
-	// 4. Handle --download mode
+	// Parse useMemory from command line or config
+	if useMemory != "" {
+		cfg.UseMemory = useMemory
+	} else if cfg.UseMemory == "" {
+		// Use default (1G) if not specified in command line or config
+		cfg.UseMemory = "1G"
+	}
+
+	// 4. Handle --prepare mode
+	if doPrepare {
+		if targetDir == "" {
+			i18n.Printf("Error: --target-dir is required for --prepare mode\n")
+			os.Exit(1)
+		}
+
+		// Check if target directory exists
+		if _, err := os.Stat(targetDir); os.IsNotExist(err) {
+			i18n.Printf("Error: Backup directory does not exist: %s\n", targetDir)
+			os.Exit(1)
+		}
+
+		outputHeader()
+		i18n.Printf("[backup-helper] Preparing backup in directory: %s\n", targetDir)
+		i18n.Printf("[backup-helper] Parallel threads: %d\n", cfg.Parallel)
+		i18n.Printf("[backup-helper] Use memory: %s\n", cfg.UseMemory)
+
+		// Try to get MySQL connection for defaults-file (optional, can be nil)
+		var db *sql.DB
+		if host != "" && user != "" {
+			if password == "" {
+				i18n.Printf("Please input mysql-server password (optional, for defaults-file): ")
+				pwd, _ := term.ReadPassword(0)
+				i18n.Printf("\n")
+				password = string(pwd)
+			}
+			if password != "" {
+				db = utils.GetConnection(host, port, user, password)
+				defer db.Close()
+			}
+		}
+
+		cmd, logFileName, err := utils.RunXtrabackupPrepare(cfg, targetDir, db)
+		if err != nil {
+			i18n.Printf("Failed to start prepare: %v\n", err)
+			os.Exit(1)
+		}
+
+		// Wait for prepare to complete
+		err = cmd.Wait()
+		utils.CloseBackupLogFile(cmd)
+
+		if err != nil {
+			i18n.Printf("Prepare failed: %v\n", err)
+			// Check backup log for details
+			logContent, err := os.ReadFile(logFileName)
+			if err == nil {
+				i18n.Printf("Xtrabackup log:\n%s\n", string(logContent))
+			}
+			os.Exit(1)
+		}
+
+		i18n.Printf("[backup-helper] Prepare completed successfully!\n")
+		i18n.Printf("[backup-helper] Backup is ready for restore in: %s\n", targetDir)
+		return
+	}
+
+	// 5. Handle --download mode
 	if doDownload {
 		// Display header (only if not outputting to stdout)
 		if downloadOutput != "-" {

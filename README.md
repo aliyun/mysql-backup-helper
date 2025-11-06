@@ -69,6 +69,7 @@
 - **remoteOutput**：SSH 模式下远程保存路径
 - **ioLimit**：IO 带宽限制（字节/秒），设为 `0` 使用默认值（200MB/s），设为 `-1` 表示不限速
 - **parallel**：并行线程数（默认：4），用于 xtrabackup 备份、压缩、解压缩和 xbstream 解包操作
+- **useMemory**：准备操作使用的内存大小（默认：1G），支持单位（如 '1G', '512M'）
 - 其它参数可通过命令行覆盖，命令行参数优先于配置文件。
 
 **注意**：工具会自动处理以下 xtrabackup 选项，无需用户配置：
@@ -89,8 +90,9 @@
 | --password          | MySQL 密码（优先于配置文件，未指定则交互输入）               |
 | --backup            | 启动备份流程（否则只做参数检查）                             |
 | --download          | 下载模式：从 TCP 流接收备份数据并保存                       |
+| --prepare           | 准备模式：执行 xtrabackup --prepare 使备份可用于恢复         |
 | --output            | 下载模式输出文件路径（使用 '-' 表示输出到 stdout，默认：backup_YYYYMMDDHHMMSS.xb） |
-| --target-dir        | 解包目录：下载后自动解压（如需要）和解包到指定目录 |
+| --target-dir        | 目录：下载模式用于解包目录，准备模式用于备份目录             |
 | --mode              | 备份模式：`oss`（上传到 OSS）或 `stream`（推送到 TCP 端口）  |
 | --stream-port       | 流式推送时监听的本地端口（如 9999，设为 0 则自动查找空闲端口），或指定远程端口（当使用 --stream-host 时） |
 | --stream-host       | 远程主机 IP（如 '192.168.1.100'）。指定后主动连接到远程服务器推送数据，类似 `nc host port` |
@@ -105,6 +107,7 @@
 | --estimated-size     | 预估备份大小，支持单位（如 '100MB', '1GB'）或字节（用于进度跟踪） |
 | --io-limit           | IO 带宽限制，支持单位（如 '100MB/s', '1GB/s'）或字节/秒，使用 -1 表示不限速 |
 | --parallel           | 并行线程数（默认：4），用于 xtrabackup 备份（--parallel）、qpress 压缩（--compress-threads）、zstd 压缩/解压缩（-T）、xbstream 解包（--parallel）和 xtrabackup 解压缩（--parallel） |
+| --use-memory         | 准备操作使用的内存大小（如 '1G', '512M'），默认：1G          |
 | --version, -v        | 显示版本信息                                                      |
 
 ---
@@ -266,7 +269,31 @@ cat backup.xb | ./backup-helper --config config.json --existed-backup - --mode=s
 # 例如：--estimated-size 1073741824 或 --estimated-size 1GB
 ```
 
-### 15. 下载模式：从 TCP 流接收备份数据
+### 15. 准备备份（Prepare Mode）
+
+备份完成后，需要执行 prepare 操作使备份可用于恢复：
+
+```sh
+# 基本用法
+./backup-helper --prepare --target-dir=/path/to/backup
+
+# 指定并行线程数和内存大小
+./backup-helper --prepare --target-dir=/path/to/backup --parallel=8 --use-memory=2G
+
+# 使用配置文件
+./backup-helper --config config.json --prepare --target-dir=/path/to/backup
+
+# 可选：提供 MySQL 连接信息以自动获取 --defaults-file
+./backup-helper --prepare --target-dir=/path/to/backup --host=127.0.0.1 --user=root --port=3306
+```
+
+**说明**：
+- `--target-dir`：必需，指定要准备的备份目录
+- `--parallel`：并行线程数，默认 4（可使用配置文件或在命令行指定）
+- `--use-memory`：准备操作使用的内存大小，默认 1G（支持单位：G, M, K）
+- `--host`, `--user`, `--port`：可选，如果提供则可以自动获取 `--defaults-file`
+
+### 16. 下载模式：从 TCP 流接收备份数据
 
 ```sh
 # 下载到默认文件（backup_YYYYMMDDHHMMSS.xb）

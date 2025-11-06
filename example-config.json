@@ -29,5 +29,6 @@
   "ioLimit": 0,
   "downloadOutput": "",
   "remoteOutput": "",
-  "parallel": 4
+  "parallel": 4,
+  "useMemory": "1G"
 }
