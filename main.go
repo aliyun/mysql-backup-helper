@@ -198,10 +198,20 @@ func main() {
 			os.Exit(1)
 		}
 
+		// Create log context
+		logCtx, err := utils.NewLogContext(cfg.LogDir)
+		if err != nil {
+			i18n.Printf("Failed to create log context: %v\n", err)
+			os.Exit(1)
+		}
+		defer logCtx.Close()
+
 		outputHeader()
 		i18n.Printf("[backup-helper] Preparing backup in directory: %s\n", targetDir)
 		i18n.Printf("[backup-helper] Parallel threads: %d\n", cfg.Parallel)
 		i18n.Printf("[backup-helper] Use memory: %s\n", cfg.UseMemory)
+		logCtx.WriteLog("PREPARE", "Starting prepare operation")
+		logCtx.WriteLog("PREPARE", "Target directory: %s", targetDir)
 
 		// Try to get MySQL connection for defaults-file (optional, can be nil)
 		var db *sql.DB
@@ -218,33 +228,83 @@ func main() {
 			}
 		}
 
-		cmd, logFileName, err := utils.RunXtrabackupPrepare(cfg, targetDir, db)
+		cmd, err := utils.RunXtrabackupPrepare(cfg, targetDir, db, logCtx)
 		if err != nil {
+			logCtx.WriteLog("PREPARE", "Failed to start prepare: %v", err)
 			i18n.Printf("Failed to start prepare: %v\n", err)
 			os.Exit(1)
 		}
 
 		// Wait for prepare to complete
 		err = cmd.Wait()
-		utils.CloseBackupLogFile(cmd)
-
 		if err != nil {
-			i18n.Printf("Prepare failed: %v\n", err)
-			// Check backup log for details
-			logContent, err := os.ReadFile(logFileName)
-			if err == nil {
-				i18n.Printf("Xtrabackup log:\n%s\n", string(logContent))
+			logCtx.WriteLog("PREPARE", "Prepare failed: %v", err)
+			// Read log content for error extraction
+			logContent, err2 := os.ReadFile(logCtx.GetFileName())
+			if err2 == nil {
+				errorSummary := utils.ExtractErrorSummary("PREPARE", string(logContent))
+				if errorSummary != "" {
+					i18n.Printf("Prepare failed. Error summary:\n%s\n", errorSummary)
+				} else {
+					i18n.Printf("Prepare failed: %v\n", err)
+				}
+			} else {
+				i18n.Printf("Prepare failed: %v\n", err)
+			}
+			i18n.Printf("Log file: %s\n", logCtx.GetFileName())
+
+			// Prompt for AI diagnosis
+			switch aiDiagnoseFlag {
+			case "on":
+				if cfg.QwenAPIKey == "" {
+					i18n.Printf("Qwen API Key is required for AI diagnosis. Please set it in config.\n")
+					os.Exit(1)
+				}
+				logContent, _ := os.ReadFile(logCtx.GetFileName())
+				aiSuggestion, err := utils.DiagnoseWithAliQwen(cfg, "PREPARE", string(logContent))
+				if err != nil {
+					i18n.Printf("AI diagnosis failed: %v\n", err)
+				} else {
+					fmt.Print(color.YellowString(i18n.Sprintf("AI diagnosis suggestion:\n")))
+					fmt.Println(color.YellowString(aiSuggestion))
+				}
+			case "off":
+				// do nothing
+			default:
+				var input string
+				i18n.Printf("Would you like to use AI diagnosis? (y/n): ")
+				fmt.Scanln(&input)
+				if input == "y" || input == "Y" || input == "yes" || input == "Yes" {
+					logContent, _ := os.ReadFile(logCtx.GetFileName())
+					aiSuggestion, err := utils.DiagnoseWithAliQwen(cfg, "PREPARE", string(logContent))
+					if err != nil {
+						i18n.Printf("AI diagnosis failed: %v\n", err)
+					} else {
+						fmt.Print(color.YellowString(i18n.Sprintf("AI diagnosis suggestion:\n")))
+						fmt.Println(color.YellowString(aiSuggestion))
+					}
+				}
 			}
 			os.Exit(1)
 		}
 
+		logCtx.WriteLog("PREPARE", "Prepare completed successfully")
 		i18n.Printf("[backup-helper] Prepare completed successfully!\n")
 		i18n.Printf("[backup-helper] Backup is ready for restore in: %s\n", targetDir)
+		i18n.Printf("[backup-helper] Log file: %s\n", logCtx.GetFileName())
 		return
 	}
 
 	// 5. Handle --download mode
 	if doDownload {
+		// Create log context
+		logCtx, err := utils.NewLogContext(cfg.LogDir)
+		if err != nil {
+			i18n.Printf("Failed to create log context: %v\n", err)
+			os.Exit(1)
+		}
+		defer logCtx.Close()
+
 		// Display header (only if not outputting to stdout)
 		if downloadOutput != "-" {
 			outputHeader()
@@ -252,6 +312,7 @@ func main() {
 			// When outputting to stdout, output header to stderr
 			outputHeaderToStderr()
 		}
+		logCtx.WriteLog("DOWNLOAD", "Starting download mode")
 
 		// Parse stream-port from command line or config
 		if streamPort == 0 && !isFlagPassed("stream-port") && cfg.StreamPort > 0 {
@@ -333,10 +394,12 @@ func main() {
 
 		// Start TCP receiver
 		isCompressed := downloadCompressType != ""
-		receiver, tracker, closer, actualPort, localIP, err := utils.StartStreamReceiver(streamPort, enableHandshake, streamKey, estimatedSize, isCompressed)
+		logCtx.WriteLog("DOWNLOAD", "Starting TCP receiver on port %d", streamPort)
+		receiver, tracker, closer, actualPort, localIP, err := utils.StartStreamReceiver(streamPort, enableHandshake, streamKey, estimatedSize, isCompressed, logCtx)
 		_ = actualPort // Port info already displayed in StartStreamReceiver
 		_ = localIP    // IP info already displayed in StartStreamReceiver
 		if err != nil {
+			logCtx.WriteLog("DOWNLOAD", "Stream receiver error: %v", err)
 			i18n.Fprintf(os.Stderr, "Stream receiver error: %v\n", err)
 			os.Exit(1)
 		}
@@ -366,17 +429,68 @@ func main() {
 
 			if downloadCompressType != "" {
 				i18n.Printf("[backup-helper] Receiving backup data (compression: %s)...\n", downloadCompressType)
+				logCtx.WriteLog("DOWNLOAD", "Receiving compressed backup data (compression: %s)", downloadCompressType)
 			} else {
 				i18n.Printf("[backup-helper] Receiving backup data (no compression)...\n")
+				logCtx.WriteLog("DOWNLOAD", "Receiving uncompressed backup data")
 			}
 			i18n.Printf("[backup-helper] Extracting to directory: %s\n", targetDir)
+			logCtx.WriteLog("DOWNLOAD", "Extracting to directory: %s", targetDir)
 
-			err := utils.ExtractBackupStream(reader, downloadCompressType, targetDir, outputPath, cfg.Parallel)
+			err := utils.ExtractBackupStream(reader, downloadCompressType, targetDir, outputPath, cfg.Parallel, logCtx)
 			if err != nil {
-				i18n.Printf("Extraction error: %v\n", err)
+				logCtx.WriteLog("EXTRACT", "Extraction error: %v", err)
+				// Read log content for error extraction
+				logContent, err2 := os.ReadFile(logCtx.GetFileName())
+				if err2 == nil {
+					errorSummary := utils.ExtractErrorSummary("EXTRACT", string(logContent))
+					if errorSummary != "" {
+						i18n.Printf("Extraction error. Error summary:\n%s\n", errorSummary)
+					} else {
+						i18n.Printf("Extraction error: %v\n", err)
+					}
+				} else {
+					i18n.Printf("Extraction error: %v\n", err)
+				}
+				i18n.Printf("Log file: %s\n", logCtx.GetFileName())
+
+				// Prompt for AI diagnosis
+				switch aiDiagnoseFlag {
+				case "on":
+					if cfg.QwenAPIKey == "" {
+						i18n.Printf("Qwen API Key is required for AI diagnosis. Please set it in config.\n")
+						os.Exit(1)
+					}
+					logContent, _ := os.ReadFile(logCtx.GetFileName())
+					aiSuggestion, err := utils.DiagnoseWithAliQwen(cfg, "EXTRACT", string(logContent))
+					if err != nil {
+						i18n.Printf("AI diagnosis failed: %v\n", err)
+					} else {
+						fmt.Print(color.YellowString(i18n.Sprintf("AI diagnosis suggestion:\n")))
+						fmt.Println(color.YellowString(aiSuggestion))
+					}
+				case "off":
+					// do nothing
+				default:
+					var input string
+					i18n.Printf("Would you like to use AI diagnosis? (y/n): ")
+					fmt.Scanln(&input)
+					if input == "y" || input == "Y" || input == "yes" || input == "Yes" {
+						logContent, _ := os.ReadFile(logCtx.GetFileName())
+						aiSuggestion, err := utils.DiagnoseWithAliQwen(cfg, "EXTRACT", string(logContent))
+						if err != nil {
+							i18n.Printf("AI diagnosis failed: %v\n", err)
+						} else {
+							fmt.Print(color.YellowString(i18n.Sprintf("AI diagnosis suggestion:\n")))
+							fmt.Println(color.YellowString(aiSuggestion))
+						}
+					}
+				}
 				os.Exit(1)
 			}
 			i18n.Printf("[backup-helper] Extraction completed to: %s\n", targetDir)
+			logCtx.WriteLog("DOWNLOAD", "Extraction completed successfully")
+			i18n.Printf("[backup-helper] Log file: %s\n", logCtx.GetFileName())
 		} else if outputPath == "-" {
 			// Stream to stdout - set tracker to output progress to stderr
 			if tracker != nil {
@@ -387,8 +501,9 @@ func main() {
 			// If compression type is specified and outputting to stdout, handle decompression for piping
 			if downloadCompressType == "zstd" {
 				// Decompress zstd stream for piping to xbstream
-				decompressedReader, decompressCmd, err := utils.ExtractBackupStreamToStdout(reader, downloadCompressType, cfg.Parallel)
+				decompressedReader, decompressCmd, err := utils.ExtractBackupStreamToStdout(reader, downloadCompressType, cfg.Parallel, logCtx)
 				if err != nil {
+					logCtx.WriteLog("DECOMPRESS", "Decompression error: %v", err)
 					i18n.Fprintf(os.Stderr, "Decompression error: %v\n", err)
 					os.Exit(1)
 				}
@@ -397,6 +512,7 @@ func main() {
 				}
 				reader = decompressedReader
 			} else if downloadCompressType == "qp" {
+				logCtx.WriteLog("DOWNLOAD", "Warning: qpress compression cannot be stream-decompressed")
 				i18n.Fprintf(os.Stderr, "Warning: qpress compression cannot be stream-decompressed. Please save to file first.\n")
 			}
 
@@ -409,10 +525,12 @@ func main() {
 		} else {
 			// Write to file
 			i18n.Printf("[backup-helper] Receiving backup data and saving to: %s\n", outputPath)
+			logCtx.WriteLog("DOWNLOAD", "Saving backup data to: %s", outputPath)
 			if downloadCompressType == "zstd" {
 				// Save decompressed zstd stream
-				err := utils.ExtractBackupStream(reader, downloadCompressType, "", outputPath, cfg.Parallel)
+				err := utils.ExtractBackupStream(reader, downloadCompressType, "", outputPath, cfg.Parallel, logCtx)
 				if err != nil {
+					logCtx.WriteLog("EXTRACT", "Save error: %v", err)
 					i18n.Printf("Save error: %v\n", err)
 					os.Exit(1)
 				}
@@ -420,6 +538,7 @@ func main() {
 				// Save as-is
 				file, err := os.Create(outputPath)
 				if err != nil {
+					logCtx.WriteLog("DOWNLOAD", "Failed to create output file: %v", err)
 					i18n.Printf("Failed to create output file: %v\n", err)
 					os.Exit(1)
 				}
@@ -427,12 +546,15 @@ func main() {
 
 				_, err = io.Copy(file, reader)
 				if err != nil {
+					logCtx.WriteLog("DOWNLOAD", "Failed to save backup data: %v", err)
 					i18n.Printf("Download error: %v\n", err)
 					os.Exit(1)
 				}
 			}
 			// Progress tracker will display completion message via closer()
-			i18n.Printf("[backup-helper] Saved to: %s\n", outputPath)
+			i18n.Printf("[backup-helper] Download completed! Saved to: %s\n", outputPath)
+			logCtx.WriteLog("DOWNLOAD", "Download completed successfully")
+			i18n.Printf("[backup-helper] Log file: %s\n", logCtx.GetFileName())
 		}
 		return
 	}
@@ -484,11 +606,21 @@ func main() {
 		mysqlVer := cfg.MysqlVersion
 		utils.CheckXtraBackupVersion(mysqlVer)
 
+		// Create log context
+		logCtx, err := utils.NewLogContext(cfg.LogDir)
+		if err != nil {
+			i18n.Printf("Failed to create log context: %v\n", err)
+			os.Exit(1)
+		}
+		defer logCtx.Close()
+
 		i18n.Printf("[backup-helper] Running xtrabackup...\n")
 		cfg.MysqlHost = host
 		cfg.MysqlPort = port
 		cfg.MysqlUser = user
 		cfg.MysqlPassword = password
+		logCtx.WriteLog("BACKUP", "Starting backup operation")
+		logCtx.WriteLog("BACKUP", "MySQL host: %s, port: %d, user: %s", host, port, user)
 
 		// 1. Decide objectName suffix and compression param
 		ossObjectName := cfg.ObjectName
@@ -515,8 +647,9 @@ func main() {
 		timestamp := time.Now().Format("_20060102150405")
 		fullObjectName := ossObjectName + timestamp + objectSuffix
 
-		reader, cmd, logFileName, err := utils.RunXtraBackup(cfg, db)
+		reader, cmd, err := utils.RunXtraBackup(cfg, db, logCtx)
 		if err != nil {
+			logCtx.WriteLog("BACKUP", "Failed to start xtrabackup: %v", err)
 			i18n.Printf("Run xtrabackup error: %v\n", err)
 			os.Exit(1)
 		}
@@ -545,13 +678,16 @@ func main() {
 		switch mode {
 		case "oss":
 			i18n.Printf("[backup-helper] Uploading to OSS...\n")
+			logCtx.WriteLog("OSS", "Starting OSS upload")
 			isCompressed := cfg.CompressType != ""
-			err = utils.UploadReaderToOSS(cfg, fullObjectName, reader, totalSize, isCompressed)
+			err = utils.UploadReaderToOSS(cfg, fullObjectName, reader, totalSize, isCompressed, logCtx)
 			if err != nil {
+				logCtx.WriteLog("OSS", "OSS upload failed: %v", err)
 				i18n.Printf("OSS upload error: %v\n", err)
 				cmd.Process.Kill()
 				os.Exit(1)
 			}
+			logCtx.WriteLog("OSS", "OSS upload completed successfully")
 		case "stream":
 			// Parse stream-host from command line or config
 			if streamHost == "" && cfg.StreamHost != "" {
@@ -585,6 +721,8 @@ func main() {
 			if streamHost != "" {
 				if useSSH {
 					// SSH mode: Start receiver on remote via SSH
+					logCtx.WriteLog("SSH", "Starting remote receiver via SSH")
+					logCtx.WriteLog("SSH", "Remote host: %s", streamHost)
 					i18n.Printf("[backup-helper] Starting remote receiver via SSH on %s...\n", streamHost)
 
 					// Use stream-port if specified, otherwise auto-find (0)
@@ -620,7 +758,7 @@ func main() {
 					// Connect to remote receiver
 					isCompressed := cfg.CompressType != ""
 					writer, _, closer, _, err = utils.StartStreamClient(
-						streamHost, streamPort, enableHandshake, streamKey, totalSize, isCompressed)
+						streamHost, streamPort, enableHandshake, streamKey, totalSize, isCompressed, logCtx)
 					if err != nil {
 						sshCleanup()
 						i18n.Printf("Stream client error: %v\n", err)
@@ -650,7 +788,7 @@ func main() {
 
 					isCompressed := cfg.CompressType != ""
 					writer, _, closer, _, err = utils.StartStreamClient(
-						streamHost, streamPort, enableHandshake, streamKey, totalSize, isCompressed)
+						streamHost, streamPort, enableHandshake, streamKey, totalSize, isCompressed, logCtx)
 					if err != nil {
 						i18n.Printf("Stream client error: %v\n", err)
 						cmd.Process.Kill()
@@ -664,7 +802,7 @@ func main() {
 					streamPort = cfg.StreamPort
 				}
 
-				tcpWriter, _, closerFunc, actualPort, localIP, err := utils.StartStreamSender(streamPort, enableHandshake, streamKey, totalSize, cfg.CompressType != "")
+				tcpWriter, _, closerFunc, actualPort, localIP, err := utils.StartStreamSender(streamPort, enableHandshake, streamKey, totalSize, cfg.CompressType != "", logCtx)
 				_ = actualPort // Port info already displayed in StartStreamSender
 				_ = localIP    // IP info already displayed in StartStreamSender
 				if err != nil {
@@ -697,17 +835,23 @@ func main() {
 		}
 
 		cmd.Wait()
-		// backup log file needs to be closed
-		utils.CloseBackupLogFile(cmd)
+		logCtx.WriteLog("BACKUP", "xtrabackup process completed")
 		// Check backup log
-		logContent, err := os.ReadFile(logFileName)
+		logContent, err := os.ReadFile(logCtx.GetFileName())
 		if err != nil {
+			logCtx.WriteLog("BACKUP", "Failed to read log file: %v", err)
 			i18n.Printf("Backup log read error.\n")
 			os.Exit(1)
 		}
 		if !strings.Contains(string(logContent), "completed OK!") {
-			i18n.Printf("Backup failed (no 'completed OK!').\n")
-			i18n.Printf("You can check the backup log file for details: %s\n", logFileName)
+			logCtx.WriteLog("BACKUP", "Backup failed: no 'completed OK!' found in log")
+			errorSummary := utils.ExtractErrorSummary("BACKUP", string(logContent))
+			if errorSummary != "" {
+				i18n.Printf("Backup failed. Error summary:\n%s\n", errorSummary)
+			} else {
+				i18n.Printf("Backup failed (no 'completed OK!').\n")
+			}
+			i18n.Printf("Log file: %s\n", logCtx.GetFileName())
 
 			switch aiDiagnoseFlag {
 			case "on":
@@ -715,7 +859,7 @@ func main() {
 					i18n.Printf("Qwen API Key is required for AI diagnosis. Please set it in config.\n")
 					os.Exit(1)
 				}
-				aiSuggestion, err := utils.DiagnoseWithAliQwen(cfg, string(logContent))
+				aiSuggestion, err := utils.DiagnoseWithAliQwen(cfg, "BACKUP", string(logContent))
 				if err != nil {
 					i18n.Printf("AI diagnosis failed: %v\n", err)
 				} else {
@@ -729,7 +873,7 @@ func main() {
 				i18n.Printf("Would you like to use AI diagnosis? (y/n): ")
 				fmt.Scanln(&input)
 				if input == "y" || input == "Y" || input == "yes" || input == "Yes" {
-					aiSuggestion, err := utils.DiagnoseWithAliQwen(cfg, string(logContent))
+					aiSuggestion, err := utils.DiagnoseWithAliQwen(cfg, "BACKUP", string(logContent))
 					if err != nil {
 						i18n.Printf("AI diagnosis failed: %v\n", err)
 					} else {
@@ -742,29 +886,40 @@ func main() {
 		}
 		// Ensure a newline before completion message (in case progress tracker didn't clear properly)
 		fmt.Print("\n")
+		logCtx.WriteLog("BACKUP", "Backup completed successfully")
 		i18n.Printf("[backup-helper] Backup and upload completed!\n")
+		i18n.Printf("[backup-helper] Log file: %s\n", logCtx.GetFileName())
 		return
 	} else if existedBackup != "" {
+		// Create log context for existed backup
+		logCtx, err := utils.NewLogContext(cfg.LogDir)
+		if err != nil {
+			i18n.Printf("Failed to create log context: %v\n", err)
+			os.Exit(1)
+		}
+		defer logCtx.Close()
+
 		// upload existed backup file to OSS or stream via TCP
+		logCtx.WriteLog("BACKUP", "Processing existing backup file")
 		i18n.Printf("[backup-helper] Processing existing backup file...\n")
 
 		// Validate backup file before processing
 		var backupInfo *utils.BackupFileInfo
-		var err error
+		var err2 error
 
 		if existedBackup == "-" {
 			// Validate data from stdin
-			backupInfo, err = utils.ValidateBackupFileFromStdin()
-			if err != nil {
-				i18n.Printf("Validation error: %v\n", err)
+			backupInfo, err2 = utils.ValidateBackupFileFromStdin()
+			if err2 != nil {
+				i18n.Printf("Validation error: %v\n", err2)
 				os.Exit(1)
 			}
 			utils.PrintBackupFileValidationFromStdin(backupInfo)
 		} else {
 			// Validate file
-			backupInfo, err = utils.ValidateBackupFile(existedBackup)
-			if err != nil {
-				i18n.Printf("Validation error: %v\n", err)
+			backupInfo, err2 = utils.ValidateBackupFile(existedBackup)
+			if err2 != nil {
+				i18n.Printf("Validation error: %v\n", err2)
 				os.Exit(1)
 			}
 			utils.PrintBackupFileValidation(existedBackup, backupInfo)
@@ -853,7 +1008,7 @@ func main() {
 		case "oss":
 			i18n.Printf("[backup-helper] Uploading existing backup to OSS...\n")
 			isCompressed := cfg.CompressType != ""
-			err := utils.UploadReaderToOSS(cfg, fullObjectName, reader, totalSize, isCompressed)
+			err := utils.UploadReaderToOSS(cfg, fullObjectName, reader, totalSize, isCompressed, logCtx)
 			if err != nil {
 				i18n.Printf("OSS upload error: %v\n", err)
 				os.Exit(1)
@@ -909,8 +1064,9 @@ func main() {
 
 			if streamHost != "" {
 				// Active connection: connect to remote server
+				logCtx.WriteLog("TCP", "Active push mode: connecting to %s:%d", streamHost, streamPort)
 				isCompressed := cfg.CompressType != ""
-				writer, _, closer, _, err = utils.StartStreamClient(streamHost, streamPort, enableHandshake, streamKey, totalSize, isCompressed)
+				writer, _, closer, _, err = utils.StartStreamClient(streamHost, streamPort, enableHandshake, streamKey, totalSize, isCompressed, logCtx)
 				if err != nil {
 					i18n.Printf("Stream client error: %v\n", err)
 					os.Exit(1)
@@ -918,7 +1074,7 @@ func main() {
 			} else {
 				// Passive connection: listen locally and wait for connection
 				// streamPort can be 0 now (auto-find available port)
-				tcpWriter, _, closerFunc, actualPort, localIP, err := utils.StartStreamSender(streamPort, enableHandshake, streamKey, totalSize, cfg.CompressType != "")
+				tcpWriter, _, closerFunc, actualPort, localIP, err := utils.StartStreamSender(streamPort, enableHandshake, streamKey, totalSize, cfg.CompressType != "", logCtx)
 				_ = actualPort // Port info already displayed in StartStreamSender
 				_ = localIP    // IP info already displayed in StartStreamSender
 				if err != nil {

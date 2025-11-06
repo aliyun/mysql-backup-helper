@@ -42,7 +42,7 @@ func GetLocalIP() (string, error) {
 // It accepts connections and returns a WriteCloser for writing data to the remote client.
 // If port is 0, it will automatically find an available port.
 // Returns the actual listening port and local IP for display.
-func StartStreamSender(port int, enableHandshake bool, handshakeKey string, totalSize int64, isCompressed bool) (io.WriteCloser, *ProgressTracker, func(), int, string, error) {
+func StartStreamSender(port int, enableHandshake bool, handshakeKey string, totalSize int64, isCompressed bool, logCtx *LogContext) (io.WriteCloser, *ProgressTracker, func(), int, string, error) {
 	var addr string
 	var actualPort int
 
@@ -51,6 +51,9 @@ func StartStreamSender(port int, enableHandshake bool, handshakeKey string, tota
 		var err error
 		actualPort, err = GetAvailablePort()
 		if err != nil {
+			if logCtx != nil {
+				logCtx.WriteLog("TCP", "Failed to find available port: %v", err)
+			}
 			return nil, nil, nil, 0, "", fmt.Errorf("failed to find available port: %v", err)
 		}
 		addr = fmt.Sprintf(":%d", actualPort)
@@ -61,6 +64,9 @@ func StartStreamSender(port int, enableHandshake bool, handshakeKey string, tota
 
 	ln, err := net.Listen("tcp", addr)
 	if err != nil {
+		if logCtx != nil {
+			logCtx.WriteLog("TCP", "Failed to listen on port %d: %v", actualPort, err)
+		}
 		return nil, nil, nil, 0, "", fmt.Errorf("failed to listen on port %d: %v", actualPort, err)
 	}
 
@@ -72,6 +78,10 @@ func StartStreamSender(port int, enableHandshake bool, handshakeKey string, tota
 
 	fmt.Printf("[backup-helper] Listening on %s:%d\n", localIP, actualPort)
 	fmt.Printf("[backup-helper] Waiting for remote connection...\n")
+	if logCtx != nil {
+		logCtx.WriteLog("TCP", "Listening on %s:%d", localIP, actualPort)
+		logCtx.WriteLog("TCP", "Waiting for remote connection...")
+	}
 
 	// Create progress tracker
 	tracker := NewProgressTrackerWithCompression(totalSize, isCompressed)
@@ -79,10 +89,17 @@ func StartStreamSender(port int, enableHandshake bool, handshakeKey string, tota
 	if !enableHandshake {
 		conn, err := ln.Accept()
 		if err != nil {
+			if logCtx != nil {
+				logCtx.WriteLog("TCP", "Failed to accept connection: %v", err)
+			}
 			ln.Close()
 			return nil, nil, nil, 0, "", fmt.Errorf("failed to accept connection on port %d: %v", actualPort, err)
 		}
 		fmt.Println("[backup-helper] Remote client connected, no handshake required.")
+		if logCtx != nil {
+			logCtx.WriteLog("TCP", "Remote client connected, no handshake required")
+			logCtx.WriteLog("TCP", "Transfer started")
+		}
 		closer := func() { tracker.Complete(); conn.Close(); ln.Close() }
 		progressWriter := NewProgressWriter(conn, tracker)
 		return struct {
@@ -93,10 +110,16 @@ func StartStreamSender(port int, enableHandshake bool, handshakeKey string, tota
 	for {
 		conn, err := ln.Accept()
 		if err != nil {
+			if logCtx != nil {
+				logCtx.WriteLog("TCP", "Failed to accept connection: %v", err)
+			}
 			ln.Close()
 			return nil, nil, nil, 0, "", fmt.Errorf("failed to accept connection on port %d: %v", actualPort, err)
 		}
 		fmt.Println("[backup-helper] Remote client connected, waiting for handshake...")
+		if logCtx != nil {
+			logCtx.WriteLog("TCP", "Remote client connected, waiting for handshake")
+		}
 
 		goAway := false
 		// set timeout to prevent from hanging
@@ -110,7 +133,9 @@ func StartStreamSender(port int, enableHandshake bool, handshakeKey string, tota
 			line = strings.TrimSpace(line)
 			if line == handshakeKey {
 				conn.SetReadDeadline(time.Time{}) // cancel timeout
-				fmt.Println("[backup-helper] Handshake OK, start streaming backup...")
+				if logCtx != nil {
+					logCtx.WriteLog("TCP", "Handshake OK, transfer started")
+				}
 				closer := func() { tracker.Complete(); conn.Close(); ln.Close() }
 				progressWriter := NewProgressWriter(conn, tracker)
 				return struct {
@@ -132,7 +157,7 @@ func StartStreamSender(port int, enableHandshake bool, handshakeKey string, tota
 // StartStreamClient connects to a remote TCP server and returns a WriteCloser for pushing data.
 // Similar to `nc host port`, this function actively connects to the remote server.
 // Returns the remote address for display.
-func StartStreamClient(host string, port int, enableHandshake bool, handshakeKey string, totalSize int64, isCompressed bool) (io.WriteCloser, *ProgressTracker, func(), string, error) {
+func StartStreamClient(host string, port int, enableHandshake bool, handshakeKey string, totalSize int64, isCompressed bool, logCtx *LogContext) (io.WriteCloser, *ProgressTracker, func(), string, error) {
 	if host == "" {
 		return nil, nil, nil, "", fmt.Errorf("stream-host cannot be empty")
 	}
@@ -142,19 +167,37 @@ func StartStreamClient(host string, port int, enableHandshake bool, handshakeKey
 
 	addr := fmt.Sprintf("%s:%d", host, port)
 	fmt.Printf("[backup-helper] Connecting to %s...\n", addr)
+	if logCtx != nil {
+		logCtx.WriteLog("TCP", "Connecting to %s", addr)
+	}
 
 	// Create progress tracker
 	tracker := NewProgressTrackerWithCompression(totalSize, isCompressed)
 
 	conn, err := net.DialTimeout("tcp", addr, 30*time.Second)
 	if err != nil {
+		if logCtx != nil {
+			logCtx.WriteLog("TCP", "Failed to connect to %s: %v", addr, err)
+		}
 		return nil, nil, nil, "", fmt.Errorf("failed to connect to %s: %v", addr, err)
 	}
 
 	fmt.Printf("[backup-helper] Connected to %s\n", addr)
+	if logCtx != nil {
+		logCtx.WriteLog("TCP", "Connected to %s", addr)
+	}
 
 	if !enableHandshake {
-		closer := func() { tracker.Complete(); conn.Close() }
+		if logCtx != nil {
+			logCtx.WriteLog("TCP", "Transfer started (no handshake)")
+		}
+		closer := func() {
+			tracker.Complete()
+			conn.Close()
+			if logCtx != nil {
+				logCtx.WriteLog("TCP", "Transfer completed")
+			}
+		}
 		progressWriter := NewProgressWriter(conn, tracker)
 		return struct {
 			io.Writer
@@ -167,6 +210,9 @@ func StartStreamClient(host string, port int, enableHandshake bool, handshakeKey
 	_, err = conn.Write([]byte(handshakeMsg))
 	if err != nil {
 		conn.Close()
+		if logCtx != nil {
+			logCtx.WriteLog("TCP", "Failed to send handshake: %v", err)
+		}
 		return nil, nil, nil, "", fmt.Errorf("failed to send handshake to %s: %v", addr, err)
 	}
 
@@ -176,19 +222,34 @@ func StartStreamClient(host string, port int, enableHandshake bool, handshakeKey
 	response, err := reader.ReadString('\n')
 	if err != nil {
 		conn.Close()
+		if logCtx != nil {
+			logCtx.WriteLog("TCP", "Failed to receive handshake response: %v", err)
+		}
 		return nil, nil, nil, "", fmt.Errorf("failed to receive handshake response from %s: %v", addr, err)
 	}
 
 	response = strings.TrimSpace(response)
 	if response != "OK" && !strings.Contains(response, "OK") {
 		conn.Close()
+		if logCtx != nil {
+			logCtx.WriteLog("TCP", "Handshake failed: received '%s'", response)
+		}
 		return nil, nil, nil, "", fmt.Errorf("handshake failed: received '%s' from %s", response, addr)
 	}
 
 	conn.SetReadDeadline(time.Time{}) // cancel timeout
 	fmt.Printf("[backup-helper] Handshake OK, start streaming backup to %s...\n", addr)
+	if logCtx != nil {
+		logCtx.WriteLog("TCP", "Handshake OK, transfer started")
+	}
 
-	closer := func() { tracker.Complete(); conn.Close() }
+	closer := func() {
+		tracker.Complete()
+		conn.Close()
+		if logCtx != nil {
+			logCtx.WriteLog("TCP", "Transfer completed")
+		}
+	}
 	progressWriter := NewProgressWriter(conn, tracker)
 	return struct {
 		io.Writer
@@ -200,7 +261,7 @@ func StartStreamClient(host string, port int, enableHandshake bool, handshakeKey
 // It accepts connections and returns a ReadCloser for reading data from the remote client.
 // If port is 0, it will automatically find an available port.
 // Returns the actual listening port and local IP for display.
-func StartStreamReceiver(port int, enableHandshake bool, handshakeKey string, totalSize int64, isCompressed bool) (io.ReadCloser, *ProgressTracker, func(), int, string, error) {
+func StartStreamReceiver(port int, enableHandshake bool, handshakeKey string, totalSize int64, isCompressed bool, logCtx *LogContext) (io.ReadCloser, *ProgressTracker, func(), int, string, error) {
 	var addr string
 	var actualPort int
 
@@ -209,6 +270,9 @@ func StartStreamReceiver(port int, enableHandshake bool, handshakeKey string, to
 		var err error
 		actualPort, err = GetAvailablePort()
 		if err != nil {
+			if logCtx != nil {
+				logCtx.WriteLog("TCP", "Failed to find available port: %v", err)
+			}
 			return nil, nil, nil, 0, "", fmt.Errorf("failed to find available port: %v", err)
 		}
 		addr = fmt.Sprintf(":%d", actualPort)
@@ -219,6 +283,9 @@ func StartStreamReceiver(port int, enableHandshake bool, handshakeKey string, to
 
 	ln, err := net.Listen("tcp", addr)
 	if err != nil {
+		if logCtx != nil {
+			logCtx.WriteLog("TCP", "Failed to listen on port %d: %v", actualPort, err)
+		}
 		return nil, nil, nil, 0, "", fmt.Errorf("failed to listen on port %d: %v", actualPort, err)
 	}
 
@@ -230,6 +297,10 @@ func StartStreamReceiver(port int, enableHandshake bool, handshakeKey string, to
 
 	fmt.Fprintf(os.Stderr, "[backup-helper] Listening on %s:%d\n", localIP, actualPort)
 	fmt.Fprintf(os.Stderr, "[backup-helper] Waiting for remote connection...\n")
+	if logCtx != nil {
+		logCtx.WriteLog("TCP", "Listening on %s:%d", localIP, actualPort)
+		logCtx.WriteLog("TCP", "Waiting for remote connection...")
+	}
 
 	// Create progress tracker for download mode
 	tracker := NewDownloadProgressTracker(totalSize)
@@ -238,11 +309,25 @@ func StartStreamReceiver(port int, enableHandshake bool, handshakeKey string, to
 	if !enableHandshake {
 		conn, err := ln.Accept()
 		if err != nil {
+			if logCtx != nil {
+				logCtx.WriteLog("TCP", "Failed to accept connection: %v", err)
+			}
 			ln.Close()
 			return nil, nil, nil, 0, "", fmt.Errorf("failed to accept connection on port %d: %v", actualPort, err)
 		}
 		fmt.Fprintf(os.Stderr, "[backup-helper] Remote client connected, no handshake required.\n")
-		closer := func() { tracker.Complete(); conn.Close(); ln.Close() }
+		if logCtx != nil {
+			logCtx.WriteLog("TCP", "Remote client connected, no handshake required")
+			logCtx.WriteLog("TCP", "Transfer started")
+		}
+		closer := func() {
+			tracker.Complete()
+			conn.Close()
+			ln.Close()
+			if logCtx != nil {
+				logCtx.WriteLog("TCP", "Transfer completed")
+			}
+		}
 		progressReader := NewProgressReader(conn, tracker, 64*1024)
 		return struct {
 			io.Reader
@@ -252,10 +337,16 @@ func StartStreamReceiver(port int, enableHandshake bool, handshakeKey string, to
 	for {
 		conn, err := ln.Accept()
 		if err != nil {
+			if logCtx != nil {
+				logCtx.WriteLog("TCP", "Failed to accept connection: %v", err)
+			}
 			ln.Close()
 			return nil, nil, nil, 0, "", fmt.Errorf("failed to accept connection on port %d: %v", actualPort, err)
 		}
 		fmt.Fprintf(os.Stderr, "[backup-helper] Remote client connected, waiting for handshake...\n")
+		if logCtx != nil {
+			logCtx.WriteLog("TCP", "Remote client connected, waiting for handshake")
+		}
 
 		goAway := false
 		// set timeout to prevent from hanging
@@ -272,7 +363,17 @@ func StartStreamReceiver(port int, enableHandshake bool, handshakeKey string, to
 				// Send OK response for handshake
 				conn.Write([]byte("OK\n"))
 				fmt.Fprintf(os.Stderr, "[backup-helper] Handshake OK, start receiving backup...\n")
-				closer := func() { tracker.Complete(); conn.Close(); ln.Close() }
+				if logCtx != nil {
+					logCtx.WriteLog("TCP", "Handshake OK, transfer started")
+				}
+				closer := func() {
+					tracker.Complete()
+					conn.Close()
+					ln.Close()
+					if logCtx != nil {
+						logCtx.WriteLog("TCP", "Transfer completed")
+					}
+				}
 				progressReader := NewProgressReader(conn, tracker, 64*1024)
 				return struct {
 					io.Reader

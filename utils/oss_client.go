@@ -27,26 +27,44 @@ func (listener *OssProgressListener) ProgressChanged(event *oss.ProgressEvent) {
 }
 
 // UploadReaderToOSS supports fragmenting upload from io.Reader to OSS, objectName is passed by the caller
-func UploadReaderToOSS(cfg *Config, objectName string, reader io.Reader, totalSize int64, isCompressed bool) error {
+func UploadReaderToOSS(cfg *Config, objectName string, reader io.Reader, totalSize int64, isCompressed bool, logCtx *LogContext) error {
 	var waitSender sync.WaitGroup
 
 	// Create progress tracker
 	tracker := NewProgressTrackerWithCompression(totalSize, isCompressed)
 	defer tracker.Complete()
 
+	if logCtx != nil {
+		logCtx.WriteLog("OSS", "Starting OSS upload")
+		logCtx.WriteLog("OSS", "Object name: %s", objectName)
+		logCtx.WriteLog("OSS", "Total size: %d bytes", totalSize)
+	}
+
 	client, err := oss.New(cfg.Endpoint, cfg.AccessKeyId, cfg.AccessKeySecret)
 	if err != nil {
+		if logCtx != nil {
+			logCtx.WriteLog("OSS", "Failed to create OSS client: %v", err)
+		}
 		return err
 	}
 	bucket, err := client.Bucket(cfg.BucketName)
 	if err != nil {
+		if logCtx != nil {
+			logCtx.WriteLog("OSS", "Failed to get bucket: %v", err)
+		}
 		return err
 	}
 
 	storageType := oss.ObjectStorageClass(oss.StorageStandard)
 	imur, err := bucket.InitiateMultipartUpload(objectName, storageType)
 	if err != nil {
+		if logCtx != nil {
+			logCtx.WriteLog("OSS", "Failed to initiate multipart upload: %v", err)
+		}
 		return err
+	}
+	if logCtx != nil {
+		logCtx.WriteLog("OSS", "Multipart upload initiated, upload ID: %s", imur.UploadID)
 	}
 
 	bufferSize := cfg.Size
@@ -68,12 +86,18 @@ func UploadReaderToOSS(cfg *Config, objectName string, reader io.Reader, totalSi
 			waitSender.Add(1)
 			part, err := uploadPart(bucket, imur, data, index, traffic)
 			if err != nil {
+				if logCtx != nil {
+					logCtx.WriteLog("OSS", "Failed to upload part %d: %v", index, err)
+				}
 				bucket.AbortMultipartUpload(imur)
 				return err
 			}
 			parts = append(parts, part)
 			index++
 			waitSender.Done()
+			if logCtx != nil && index%10 == 0 {
+				logCtx.WriteLog("OSS", "Uploaded %d parts", index-1)
+			}
 		}
 		if err == io.EOF || err == io.ErrUnexpectedEOF {
 			break
@@ -87,7 +111,14 @@ func UploadReaderToOSS(cfg *Config, objectName string, reader io.Reader, totalSi
 	objectAcl := oss.ObjectACL(oss.ACLPrivate)
 	_, err = bucket.CompleteMultipartUpload(imur, parts, objectAcl)
 	if err != nil {
+		if logCtx != nil {
+			logCtx.WriteLog("OSS", "Failed to complete multipart upload: %v", err)
+		}
 		return err
+	}
+	if logCtx != nil {
+		logCtx.WriteLog("OSS", "OSS upload completed successfully")
+		logCtx.WriteLog("OSS", "Total parts uploaded: %d", len(parts))
 	}
 	return nil
 }

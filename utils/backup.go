@@ -10,7 +10,6 @@ import (
 	"sort"
 	"strings"
 	"syscall"
-	"time"
 
 	"github.com/gioco-play/easy-i18n/i18n"
 )
@@ -33,13 +32,8 @@ func ensureLogsDir(logDir string) error {
 	return nil
 }
 
-func getLogFileName(logDir string) string {
-	timestamp := time.Now().Format("20060102150405")
-	return filepath.Join(logDir, fmt.Sprintf("xtrabackup-%s.log", timestamp))
-}
-
 func cleanOldLogs(logDir string, keep int) error {
-	pattern := filepath.Join(logDir, "xtrabackup-*.log")
+	pattern := filepath.Join(logDir, "backup-helper-*.log")
 	files, err := filepath.Glob(pattern)
 	if err != nil {
 		return fmt.Errorf("failed to glob log files: %v", err)
@@ -70,13 +64,13 @@ func cleanOldLogs(logDir string, keep int) error {
 	return nil
 }
 
-// RunXtraBackup calls xtrabackup, returns backup data io.Reader, cmd, log file name and error
+// RunXtraBackup calls xtrabackup, returns backup data io.Reader, cmd and error
 // db is used to get MySQL config file path and must be a valid MySQL connection
-func RunXtraBackup(cfg *Config, db *sql.DB) (io.Reader, *exec.Cmd, string, error) {
-	if err := ensureLogsDir(cfg.LogDir); err != nil {
-		return nil, nil, "", err
+// logCtx is used to write logs for backup operations
+func RunXtraBackup(cfg *Config, db *sql.DB, logCtx *LogContext) (io.Reader, *exec.Cmd, error) {
+	if logCtx == nil {
+		return nil, nil, fmt.Errorf("log context is required")
 	}
-	cleanOldLogs(cfg.LogDir, 10)
 
 	// Check for MySQL config file first (must be first argument if present)
 	var defaultsFile string
@@ -132,7 +126,7 @@ func RunXtraBackup(cfg *Config, db *sql.DB) (io.Reader, *exec.Cmd, string, error
 	if cfg.CompressType == "zstd" {
 		// Check zstd dependency
 		if _, err := exec.LookPath("zstd"); err != nil {
-			return nil, nil, "", fmt.Errorf("%s", i18n.Sprintf("zstd command not found. Please install zstd: https://github.com/facebook/zstd"))
+			return nil, nil, fmt.Errorf("%s", i18n.Sprintf("zstd command not found. Please install zstd: https://github.com/facebook/zstd"))
 		}
 		// Get parallel value for zstd compression
 		parallel := cfg.Parallel
@@ -142,23 +136,20 @@ func RunXtraBackup(cfg *Config, db *sql.DB) (io.Reader, *exec.Cmd, string, error
 		// Print equivalent shell command
 		cmdStr := fmt.Sprintf("xtrabackup %s | zstd -q -T%d -", strings.Join(args, " "), parallel)
 		i18n.Printf("Equivalent shell command: %s\n", cmdStr)
+		logCtx.WriteLog("BACKUP", "Starting xtrabackup backup with zstd compression")
+		logCtx.WriteLog("BACKUP", "Command: %s", cmdStr)
 		// Use pipe method: xtrabackup ... | zstd -T<parallel>
 		xtrabackupCmd := exec.Command("xtrabackup", args...)
 		zstdCmd := exec.Command("zstd", "-q", fmt.Sprintf("-T%d", parallel), "-")
 
-		logFileName := getLogFileName(cfg.LogDir)
-		logFile, err := os.Create(logFileName)
-		if err != nil {
-			return nil, nil, "", err
-		}
-		xtrabackupCmd.Stderr = logFile
-		zstdCmd.Stderr = logFile
+		xtrabackupCmd.Stderr = logCtx.GetFile()
+		zstdCmd.Stderr = logCtx.GetFile()
 
 		// Connect pipe
 		pipe, err := xtrabackupCmd.StdoutPipe()
 		if err != nil {
-			logFile.Close()
-			return nil, nil, "", err
+			logCtx.WriteLog("BACKUP", "Failed to create pipe: %v", err)
+			return nil, nil, err
 		}
 		zstdCmd.Stdin = pipe
 
@@ -169,22 +160,22 @@ func RunXtraBackup(cfg *Config, db *sql.DB) (io.Reader, *exec.Cmd, string, error
 
 		// Start xtrabackup
 		if err := xtrabackupCmd.Start(); err != nil {
-			logFile.Close()
-			return nil, nil, "", err
+			logCtx.WriteLog("BACKUP", "Failed to start xtrabackup: %v", err)
+			return nil, nil, err
 		}
 
 		stdout, err := cmd.StdoutPipe()
 		if err != nil {
-			logFile.Close()
-			return nil, nil, "", err
+			logCtx.WriteLog("BACKUP", "Failed to create stdout pipe: %v", err)
+			return nil, nil, err
 		}
 
 		if err := cmd.Start(); err != nil {
-			logFile.Close()
-			return nil, nil, "", err
+			logCtx.WriteLog("BACKUP", "Failed to start zstd: %v", err)
+			return nil, nil, err
 		}
-		// Note: Caller needs to logFile.Close() after cmd.Wait()
-		return stdout, cmd, logFileName, nil
+		logCtx.WriteLog("BACKUP", "xtrabackup and zstd processes started successfully")
+		return stdout, cmd, nil
 	}
 
 	// Non-zstd branch, always assign cmd
@@ -198,36 +189,38 @@ func RunXtraBackup(cfg *Config, db *sql.DB) (io.Reader, *exec.Cmd, string, error
 
 	cmdStr := "xtrabackup " + strings.Join(args, " ")
 	i18n.Printf("Equivalent shell command: %s\n", cmdStr)
-
-	logFileName := getLogFileName(cfg.LogDir)
-	logFile, err := os.Create(logFileName)
-	if err != nil {
-		return nil, nil, "", err
+	logCtx.WriteLog("BACKUP", "Starting xtrabackup backup")
+	if cfg.CompressType == "qp" {
+		logCtx.WriteLog("BACKUP", "Using qpress compression")
+	} else {
+		logCtx.WriteLog("BACKUP", "No compression")
 	}
-	cmd.Stderr = logFile
+	logCtx.WriteLog("BACKUP", "Command: %s", cmdStr)
+	cmd.Stderr = logCtx.GetFile()
 
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
-		logFile.Close()
-		return nil, nil, "", err
+		logCtx.WriteLog("BACKUP", "Failed to create stdout pipe: %v", err)
+		return nil, nil, err
 	}
 
 	if err := cmd.Start(); err != nil {
-		logFile.Close()
-		return nil, nil, "", err
+		logCtx.WriteLog("BACKUP", "Failed to start xtrabackup: %v", err)
+		return nil, nil, err
 	}
-	return stdout, cmd, logFileName, nil
+	logCtx.WriteLog("BACKUP", "xtrabackup process started successfully")
+	return stdout, cmd, nil
 }
 
 // RunXtrabackupPrepare executes xtrabackup --prepare on a backup directory
 // targetDir: directory containing the backup to prepare
 // cfg: configuration containing parallel and useMemory settings
 // db: optional MySQL connection for getting defaults-file (can be nil for prepare)
-func RunXtrabackupPrepare(cfg *Config, targetDir string, db *sql.DB) (*exec.Cmd, string, error) {
-	if err := ensureLogsDir(cfg.LogDir); err != nil {
-		return nil, "", err
+// logCtx: log context for writing logs
+func RunXtrabackupPrepare(cfg *Config, targetDir string, db *sql.DB, logCtx *LogContext) (*exec.Cmd, error) {
+	if logCtx == nil {
+		return nil, fmt.Errorf("log context is required")
 	}
-	cleanOldLogs(cfg.LogDir, 10)
 
 	// Check for MySQL config file first (must be first argument if present)
 	var defaultsFile string
@@ -276,29 +269,16 @@ func RunXtrabackupPrepare(cfg *Config, targetDir string, db *sql.DB) (*exec.Cmd,
 
 	cmdStr := "xtrabackup " + strings.Join(args, " ")
 	i18n.Printf("Equivalent shell command: %s\n", cmdStr)
-
-	logFileName := getLogFileName(cfg.LogDir)
-	logFile, err := os.Create(logFileName)
-	if err != nil {
-		return nil, "", err
-	}
-	cmd.Stderr = logFile
-	cmd.Stdout = logFile
+	logCtx.WriteLog("PREPARE", "Starting xtrabackup prepare")
+	logCtx.WriteLog("PREPARE", "Target directory: %s", targetDir)
+	logCtx.WriteLog("PREPARE", "Command: %s", cmdStr)
+	cmd.Stderr = logCtx.GetFile()
+	cmd.Stdout = logCtx.GetFile()
 
 	if err := cmd.Start(); err != nil {
-		logFile.Close()
-		return nil, "", err
+		logCtx.WriteLog("PREPARE", "Failed to start xtrabackup prepare: %v", err)
+		return nil, err
 	}
-
-	return cmd, logFileName, nil
-}
-
-// CloseBackupLogFile closes cmd's Stderr log file (if it's *os.File)
-func CloseBackupLogFile(cmd *exec.Cmd) {
-	if cmd == nil || cmd.Stderr == nil {
-		return
-	}
-	if f, ok := cmd.Stderr.(*os.File); ok {
-		f.Close()
-	}
+	logCtx.WriteLog("PREPARE", "xtrabackup prepare process started successfully")
+	return cmd, nil
 }
