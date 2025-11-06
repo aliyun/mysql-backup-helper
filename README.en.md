@@ -105,7 +105,7 @@ A high-efficiency MySQL physical backup and OSS upload tool. Supports Percona Xt
 | --existed-backup     | Path to existing xtrabackup backup file to upload or stream (use '-' for stdin) |
 | --estimated-size     | Estimated backup size with units (e.g., '100MB', '1GB') or bytes (for progress tracking) |
 | --io-limit           | IO bandwidth limit with units (e.g., '100MB/s', '1GB/s') or bytes per second. Use -1 for unlimited speed |
-| --parallel           | Number of parallel threads for xtrabackup (default: 4) |
+| --parallel           | Number of parallel threads (default: 4), used for xtrabackup backup (--parallel), qpress compression (--compress-threads), zstd compression/decompression (-T), xbstream extraction (--parallel), and xtrabackup decompression (--parallel) |
 | --version, -v        | Show version information                                               |
 
 ---

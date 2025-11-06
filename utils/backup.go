@@ -131,12 +131,17 @@ func RunXtraBackup(cfg *Config, db *sql.DB) (io.Reader, *exec.Cmd, string, error
 		if _, err := exec.LookPath("zstd"); err != nil {
 			return nil, nil, "", fmt.Errorf("%s", i18n.Sprintf("zstd command not found. Please install zstd: https://github.com/facebook/zstd"))
 		}
+		// Get parallel value for zstd compression
+		parallel := cfg.Parallel
+		if parallel == 0 {
+			parallel = 4
+		}
 		// Print equivalent shell command
-		cmdStr := "xtrabackup " + strings.Join(args, " ") + " | zstd -q -"
+		cmdStr := fmt.Sprintf("xtrabackup %s | zstd -q -T%d -", strings.Join(args, " "), parallel)
 		i18n.Printf("Equivalent shell command: %s\n", cmdStr)
-		// Use pipe method: xtrabackup ... | zstd
+		// Use pipe method: xtrabackup ... | zstd -T<parallel>
 		xtrabackupCmd := exec.Command("xtrabackup", args...)
-		zstdCmd := exec.Command("zstd", "-q", "-")
+		zstdCmd := exec.Command("zstd", "-q", fmt.Sprintf("-T%d", parallel), "-")
 
 		logFileName := getLogFileName(cfg.LogDir)
 		logFile, err := os.Create(logFileName)
@@ -183,6 +188,8 @@ func RunXtraBackup(cfg *Config, db *sql.DB) (io.Reader, *exec.Cmd, string, error
 	// Use cfg.CompressType == "qp" to determine if we need --compress
 	if cfg.CompressType == "qp" {
 		args = append(args, "--compress")
+		// Add --compress-threads for parallel compression
+		args = append(args, fmt.Sprintf("--compress-threads=%d", parallel))
 	}
 	cmd = exec.Command("xtrabackup", args...)
 

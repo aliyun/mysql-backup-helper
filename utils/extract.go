@@ -12,13 +12,18 @@ import (
 // ExtractBackupStream handles decompression and extraction of backup stream
 // compressType: "zstd", "qp", or "" (no compression)
 // targetDir: directory to extract files, if empty, just save compressed/uncompressed file
+// parallel: number of parallel threads (default: 4)
 // Returns error if extraction fails
-func ExtractBackupStream(reader io.Reader, compressType string, targetDir string, outputPath string) error {
+func ExtractBackupStream(reader io.Reader, compressType string, targetDir string, outputPath string, parallel int) error {
+	if parallel == 0 {
+		parallel = 4
+	}
+
 	if targetDir == "" {
 		// No extraction requested, just save the stream
 		if compressType == "zstd" {
 			// For zstd, we need to decompress first
-			return saveZstdDecompressed(reader, outputPath)
+			return saveZstdDecompressed(reader, outputPath, parallel)
 		}
 		// For qpress or no compression, save as-is
 		file, err := os.Create(outputPath)
@@ -32,25 +37,29 @@ func ExtractBackupStream(reader io.Reader, compressType string, targetDir string
 
 	// Extraction requested
 	if compressType == "zstd" {
-		return extractZstdStream(reader, targetDir)
+		return extractZstdStream(reader, targetDir, parallel)
 	} else if compressType == "qp" {
 		// qpress compression requires saving to file first, then using xtrabackup --decompress
 		// This is because xbstream doesn't support --decompress in stream mode for MySQL 5.7
-		return extractQpressStream(reader, targetDir, outputPath)
+		return extractQpressStream(reader, targetDir, outputPath, parallel)
 	} else {
 		// No compression, just extract with xbstream
-		return extractXbstream(reader, targetDir)
+		return extractXbstream(reader, targetDir, parallel)
 	}
 }
 
 // saveZstdDecompressed saves zstd-compressed stream after decompression
-func saveZstdDecompressed(reader io.Reader, outputPath string) error {
+func saveZstdDecompressed(reader io.Reader, outputPath string, parallel int) error {
 	// Check zstd dependency
 	if _, err := exec.LookPath("zstd"); err != nil {
 		return fmt.Errorf("%s", i18n.Sprintf("zstd command not found. Please install zstd: https://github.com/facebook/zstd"))
 	}
 
-	zstdCmd := exec.Command("zstd", "-d", "-o", outputPath)
+	if parallel == 0 {
+		parallel = 4
+	}
+
+	zstdCmd := exec.Command("zstd", "-d", fmt.Sprintf("-T%d", parallel), "-o", outputPath)
 	zstdCmd.Stdin = reader
 	zstdCmd.Stderr = os.Stderr
 	zstdCmd.Stdout = os.Stderr
@@ -59,7 +68,7 @@ func saveZstdDecompressed(reader io.Reader, outputPath string) error {
 }
 
 // extractZstdStream decompresses zstd stream and extracts with xbstream
-func extractZstdStream(reader io.Reader, targetDir string) error {
+func extractZstdStream(reader io.Reader, targetDir string, parallel int) error {
 	// Check dependencies
 	if _, err := exec.LookPath("zstd"); err != nil {
 		return fmt.Errorf("%s", i18n.Sprintf("zstd command not found. Please install zstd: https://github.com/facebook/zstd"))
@@ -68,17 +77,21 @@ func extractZstdStream(reader io.Reader, targetDir string) error {
 		return fmt.Errorf("%s", i18n.Sprintf("xbstream command not found. Please install Percona XtraBackup"))
 	}
 
+	if parallel == 0 {
+		parallel = 4
+	}
+
 	// Create extraction directory
 	if err := os.MkdirAll(targetDir, 0755); err != nil {
 		return fmt.Errorf("failed to create extraction directory: %v", err)
 	}
 
-	// Pipe: reader -> zstd -d -> xbstream -x
-	zstdCmd := exec.Command("zstd", "-d", "-")
+	// Pipe: reader -> zstd -d -T<parallel> -> xbstream -x --parallel=<parallel>
+	zstdCmd := exec.Command("zstd", "-d", fmt.Sprintf("-T%d", parallel), "-")
 	zstdCmd.Stdin = reader
 	zstdCmd.Stderr = os.Stderr
 
-	xbstreamCmd := exec.Command("xbstream", "-x", "-C", targetDir)
+	xbstreamCmd := exec.Command("xbstream", "-x", fmt.Sprintf("--parallel=%d", parallel), "-C", targetDir)
 	xbstreamCmd.Stdin, _ = zstdCmd.StdoutPipe()
 	xbstreamCmd.Stderr = os.Stderr
 	xbstreamCmd.Stdout = os.Stderr
@@ -109,13 +122,17 @@ func extractZstdStream(reader io.Reader, targetDir string) error {
 // extractQpressStream handles qpress-compressed backup stream
 // Note: xbstream doesn't support --decompress in stream mode for MySQL 5.7
 // So we need to save to file first, then extract and decompress
-func extractQpressStream(reader io.Reader, targetDir string, outputPath string) error {
+func extractQpressStream(reader io.Reader, targetDir string, outputPath string, parallel int) error {
 	// Check dependencies
 	if _, err := exec.LookPath("xbstream"); err != nil {
 		return fmt.Errorf("%s", i18n.Sprintf("xbstream command not found. Please install Percona XtraBackup"))
 	}
 	if _, err := exec.LookPath("xtrabackup"); err != nil {
 		return fmt.Errorf("%s", i18n.Sprintf("xtrabackup command not found. Please install Percona XtraBackup"))
+	}
+
+	if parallel == 0 {
+		parallel = 4
 	}
 
 	// Step 1: Save compressed stream to file
@@ -147,7 +164,7 @@ func extractQpressStream(reader io.Reader, targetDir string, outputPath string) 
 	}
 	defer extractFile.Close()
 
-	xbstreamCmd := exec.Command("xbstream", "-x", "-C", targetDir)
+	xbstreamCmd := exec.Command("xbstream", "-x", fmt.Sprintf("--parallel=%d", parallel), "-C", targetDir)
 	xbstreamCmd.Stdin = extractFile
 	xbstreamCmd.Stderr = os.Stderr
 	xbstreamCmd.Stdout = os.Stderr
@@ -158,7 +175,7 @@ func extractQpressStream(reader io.Reader, targetDir string, outputPath string) 
 	}
 
 	// Step 3: Decompress extracted files using xtrabackup --decompress
-	xtrabackupCmd := exec.Command("xtrabackup", "--decompress", "--target-dir", targetDir)
+	xtrabackupCmd := exec.Command("xtrabackup", "--decompress", fmt.Sprintf("--parallel=%d", parallel), "--target-dir", targetDir)
 	xtrabackupCmd.Stderr = os.Stderr
 	xtrabackupCmd.Stdout = os.Stderr
 
@@ -174,10 +191,14 @@ func extractQpressStream(reader io.Reader, targetDir string, outputPath string) 
 }
 
 // extractXbstream extracts uncompressed xbstream backup
-func extractXbstream(reader io.Reader, targetDir string) error {
+func extractXbstream(reader io.Reader, targetDir string, parallel int) error {
 	// Check dependency
 	if _, err := exec.LookPath("xbstream"); err != nil {
 		return fmt.Errorf("%s", i18n.Sprintf("xbstream command not found. Please install Percona XtraBackup"))
+	}
+
+	if parallel == 0 {
+		parallel = 4
 	}
 
 	// Create extraction directory
@@ -186,7 +207,7 @@ func extractXbstream(reader io.Reader, targetDir string) error {
 	}
 
 	// Extract with xbstream
-	xbstreamCmd := exec.Command("xbstream", "-x", "-C", targetDir)
+	xbstreamCmd := exec.Command("xbstream", "-x", fmt.Sprintf("--parallel=%d", parallel), "-C", targetDir)
 	xbstreamCmd.Stdin = reader
 	xbstreamCmd.Stderr = os.Stderr
 	xbstreamCmd.Stdout = os.Stderr
@@ -196,15 +217,19 @@ func extractXbstream(reader io.Reader, targetDir string) error {
 
 // ExtractBackupStreamToStdout handles decompression only (for piping to xbstream)
 // Returns reader that can be piped to xbstream
-func ExtractBackupStreamToStdout(reader io.Reader, compressType string) (io.Reader, *exec.Cmd, error) {
+func ExtractBackupStreamToStdout(reader io.Reader, compressType string, parallel int) (io.Reader, *exec.Cmd, error) {
 	if compressType == "zstd" {
 		// Check zstd dependency
 		if _, err := exec.LookPath("zstd"); err != nil {
 			return nil, nil, fmt.Errorf("%s", i18n.Sprintf("zstd command not found. Please install zstd: https://github.com/facebook/zstd"))
 		}
 
+		if parallel == 0 {
+			parallel = 4
+		}
+
 		// Decompress with zstd
-		zstdCmd := exec.Command("zstd", "-d", "-")
+		zstdCmd := exec.Command("zstd", "-d", fmt.Sprintf("-T%d", parallel), "-")
 		zstdCmd.Stdin = reader
 		zstdCmd.Stderr = os.Stderr
 

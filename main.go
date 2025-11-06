@@ -300,7 +300,7 @@ func main() {
 			}
 			i18n.Printf("[backup-helper] Extracting to directory: %s\n", targetDir)
 
-			err := utils.ExtractBackupStream(reader, downloadCompressType, targetDir, outputPath)
+			err := utils.ExtractBackupStream(reader, downloadCompressType, targetDir, outputPath, cfg.Parallel)
 			if err != nil {
 				i18n.Printf("Extraction error: %v\n", err)
 				os.Exit(1)
@@ -316,7 +316,7 @@ func main() {
 			// If compression type is specified and outputting to stdout, handle decompression for piping
 			if downloadCompressType == "zstd" {
 				// Decompress zstd stream for piping to xbstream
-				decompressedReader, decompressCmd, err := utils.ExtractBackupStreamToStdout(reader, downloadCompressType)
+				decompressedReader, decompressCmd, err := utils.ExtractBackupStreamToStdout(reader, downloadCompressType, cfg.Parallel)
 				if err != nil {
 					i18n.Fprintf(os.Stderr, "Decompression error: %v\n", err)
 					os.Exit(1)
@@ -340,7 +340,7 @@ func main() {
 			i18n.Printf("[backup-helper] Receiving backup data and saving to: %s\n", outputPath)
 			if downloadCompressType == "zstd" {
 				// Save decompressed zstd stream
-				err := utils.ExtractBackupStream(reader, downloadCompressType, "", outputPath)
+				err := utils.ExtractBackupStream(reader, downloadCompressType, "", outputPath, cfg.Parallel)
 				if err != nil {
 					i18n.Printf("Save error: %v\n", err)
 					os.Exit(1)

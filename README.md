@@ -68,7 +68,7 @@
 - **downloadOutput**：下载模式默认输出路径
 - **remoteOutput**：SSH 模式下远程保存路径
 - **ioLimit**：IO 带宽限制（字节/秒），设为 `0` 使用默认值（200MB/s），设为 `-1` 表示不限速
-- **parallel**：xtrabackup 并行线程数（默认：4）
+- **parallel**：并行线程数（默认：4），用于 xtrabackup 备份、压缩、解压缩和 xbstream 解包操作
 - 其它参数可通过命令行覆盖，命令行参数优先于配置文件。
 
 **注意**：工具会自动处理以下 xtrabackup 选项，无需用户配置：
@@ -104,7 +104,7 @@
 | --existed-backup     | 已存在的xtrabackup备份文件路径，用于上传或流式传输（使用'-'表示从stdin读取） |
 | --estimated-size     | 预估备份大小，支持单位（如 '100MB', '1GB'）或字节（用于进度跟踪） |
 | --io-limit           | IO 带宽限制，支持单位（如 '100MB/s', '1GB/s'）或字节/秒，使用 -1 表示不限速 |
-| --parallel           | xtrabackup 并行线程数（默认：4） |
+| --parallel           | 并行线程数（默认：4），用于 xtrabackup 备份（--parallel）、qpress 压缩（--compress-threads）、zstd 压缩/解压缩（-T）、xbstream 解包（--parallel）和 xtrabackup 解压缩（--parallel） |
 | --version, -v        | 显示版本信息                                                      |
 
 ---
