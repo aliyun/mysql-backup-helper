@@ -70,6 +70,7 @@ A high-efficiency MySQL physical backup and OSS upload tool. Supports Percona Xt
 - **ioLimit**: IO bandwidth limit (bytes per second), set to `0` to use default (200MB/s), set to `-1` for unlimited speed
 - **parallel**: Number of parallel threads (default: 4), used for xtrabackup backup, compression, decompression, and xbstream extraction operations
 - **useMemory**: Memory to use for prepare operation (default: 1G), supports units (e.g., '1G', '512M')
+- **xtrabackupPath**: Path to xtrabackup binary or directory containing xtrabackup/xbstream. Priority: command-line flag > config file > environment variable `XTRABACKUP_PATH` > PATH lookup
 - All config fields can be overridden by command-line arguments. Command-line arguments take precedence over config.
 
 **Note**: The tool automatically handles the following xtrabackup options without user configuration:
@@ -108,6 +109,7 @@ A high-efficiency MySQL physical backup and OSS upload tool. Supports Percona Xt
 | --io-limit           | IO bandwidth limit with units (e.g., '100MB/s', '1GB/s') or bytes per second. Use -1 for unlimited speed |
 | --parallel           | Number of parallel threads (default: 4), used for xtrabackup backup (--parallel), qpress compression (--compress-threads), zstd compression/decompression (-T), xbstream extraction (--parallel), and xtrabackup decompression (--parallel) |
 | --use-memory         | Memory to use for prepare operation (e.g., '1G', '512M'). Default: 1G |
+| --xtrabackup-path    | Path to xtrabackup binary or directory containing xtrabackup/xbstream (overrides config file and environment variable) |
 | -y, --yes            | Non-interactive mode: automatically answer 'yes' to all prompts (including directory overwrite confirmation and AI diagnosis confirmation) |
 | --version, -v        | Show version information                                               |
 

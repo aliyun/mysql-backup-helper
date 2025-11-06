@@ -70,6 +70,7 @@
 - **ioLimit**：IO 带宽限制（字节/秒），设为 `0` 使用默认值（200MB/s），设为 `-1` 表示不限速
 - **parallel**：并行线程数（默认：4），用于 xtrabackup 备份、压缩、解压缩和 xbstream 解包操作
 - **useMemory**：准备操作使用的内存大小（默认：1G），支持单位（如 '1G', '512M'）
+- **xtrabackupPath**：xtrabackup 二进制文件路径或包含 xtrabackup/xbstream 的目录路径。优先级：命令行参数 > 配置文件 > 环境变量 `XTRABACKUP_PATH` > PATH 查找
 - 其它参数可通过命令行覆盖，命令行参数优先于配置文件。
 
 **注意**：工具会自动处理以下 xtrabackup 选项，无需用户配置：
@@ -108,6 +109,7 @@
 | --io-limit           | IO 带宽限制，支持单位（如 '100MB/s', '1GB/s'）或字节/秒，使用 -1 表示不限速 |
 | --parallel           | 并行线程数（默认：4），用于 xtrabackup 备份（--parallel）、qpress 压缩（--compress-threads）、zstd 压缩/解压缩（-T）、xbstream 解包（--parallel）和 xtrabackup 解压缩（--parallel） |
 | --use-memory         | 准备操作使用的内存大小（如 '1G', '512M'），默认：1G          |
+| --xtrabackup-path    | xtrabackup 二进制文件路径或包含 xtrabackup/xbstream 的目录路径（覆盖配置文件和环境变量） |
 | -y, --yes            | 非交互模式：自动对所有提示回答 'yes'（包括目录覆盖确认和 AI 诊断确认） |
 | --version, -v        | 显示版本信息                                                      |
 

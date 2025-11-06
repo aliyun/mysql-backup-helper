@@ -117,8 +117,16 @@ func getVersion(value string) Version {
 	return Version{major, minor, micro}
 }
 
-func CheckXtraBackupVersion(mysqlVer Version) {
-	cmd := exec.Command("xtrabackup", "--version")
+func CheckXtraBackupVersion(mysqlVer Version, cfg *Config) {
+	// Resolve xtrabackup path
+	xtrabackupPath, _, err := ResolveXtrabackupPath(cfg)
+	if err != nil {
+		msg := fmt.Sprintf("[Error] Cannot resolve xtrabackup path: %v", err)
+		i18n.Printf(color.RedString("%s\n", msg))
+		return
+	}
+
+	cmd := exec.Command(xtrabackupPath, "--version")
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		msg := i18n.Sprintf("[Error] Cannot execute xtrabackup --version, please confirm that Percona XtraBackup is installed and in PATH")
@@ -165,8 +173,14 @@ func CheckXtraBackupVersion(mysqlVer Version) {
 }
 
 // GetXtrabackupVersion Extract xtrabackup major.minor.patch-revision four-part version number
-func GetXtrabackupVersion() [4]int {
-	cmd := exec.Command("xtrabackup", "--version")
+func GetXtrabackupVersion(cfg *Config) [4]int {
+	// Resolve xtrabackup path
+	xtrabackupPath, _, err := ResolveXtrabackupPath(cfg)
+	if err != nil {
+		return [4]int{0, 0, 0, 0}
+	}
+
+	cmd := exec.Command(xtrabackupPath, "--version")
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		return [4]int{0, 0, 0, 0}

@@ -34,6 +34,7 @@ type Config struct {
 	RemoteOutput    string  `json:"remoteOutput"`
 	Parallel        int     `json:"parallel"`
 	UseMemory       string  `json:"useMemory"`
+	XtrabackupPath  string  `json:"xtrabackupPath"`
 }
 
 func LoadConfig(path string) (*Config, error) {

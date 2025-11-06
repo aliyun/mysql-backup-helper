@@ -131,6 +131,7 @@ func main() {
 	var parallel int
 	var useMemory string
 	var autoYes bool
+	var xtrabackupPath string
 
 	flag.BoolVar(&doBackup, "backup", false, "Run xtrabackup and upload to OSS")
 	flag.BoolVar(&autoYes, "y", false, "Automatically answer 'yes' to all prompts (non-interactive mode)")
@@ -142,6 +143,7 @@ func main() {
 	flag.StringVar(&estimatedSizeStr, "estimated-size", "", "Estimated backup size with unit (e.g., '100MB', '1GB', '500KB') or bytes (for progress tracking)")
 	flag.StringVar(&ioLimitStr, "io-limit", "", "IO bandwidth limit with unit (e.g., '100MB/s', '1GB/s', '500KB/s') or bytes per second. Use -1 for unlimited speed")
 	flag.StringVar(&useMemory, "use-memory", "", "Memory to use for prepare operation (e.g., '1G', '512M'). Default: 1G")
+	flag.StringVar(&xtrabackupPath, "xtrabackup-path", "", "Path to xtrabackup binary or directory containing xtrabackup/xbstream (overrides config and environment variable)")
 	flag.StringVar(&existedBackup, "existed-backup", "", "Path to existing xtrabackup backup file to upload (use '-' for stdin)")
 	flag.BoolVar(&showVersion, "version", false, "Show version information")
 	flag.BoolVar(&showVersion, "v", false, "Show version information (shorthand)")
@@ -233,6 +235,17 @@ func main() {
 	}
 	if existedBackup == "" && cfg.ExistedBackup != "" {
 		existedBackup = cfg.ExistedBackup
+	}
+
+	// Handle --xtrabackup-path flag (command-line flag overrides config)
+	if xtrabackupPath != "" {
+		cfg.XtrabackupPath = xtrabackupPath
+	} else if cfg.XtrabackupPath == "" {
+		// If not set in flag or config, check environment variable
+		// (ResolveXtrabackupPath will handle this, but we can also set it here for consistency)
+		if envPath := os.Getenv("XTRABACKUP_PATH"); envPath != "" {
+			cfg.XtrabackupPath = envPath
+		}
 	}
 
 	// Parse estimatedSize from command line or config
@@ -427,20 +440,20 @@ func main() {
 		if downloadCompressType != "" {
 			if targetDir != "" {
 				// Extraction mode: check extraction dependencies
-				if err := utils.CheckExtractionDependencies(downloadCompressType); err != nil {
+				if err := utils.CheckExtractionDependencies(downloadCompressType, cfg); err != nil {
 					i18n.Printf("Error: %v\n", err)
 					os.Exit(1)
 				}
 			} else {
 				// Save mode: check compression dependencies (download mode, not backup mode)
-				if err := utils.CheckCompressionDependencies(downloadCompressType, false); err != nil {
+				if err := utils.CheckCompressionDependencies(downloadCompressType, false, cfg); err != nil {
 					i18n.Printf("Error: %v\n", err)
 					os.Exit(1)
 				}
 			}
 		} else if targetDir != "" {
 			// No compression but extraction requested: check xbstream dependency
-			if err := utils.CheckExtractionDependencies(""); err != nil {
+			if err := utils.CheckExtractionDependencies("", cfg); err != nil {
 				i18n.Printf("Error: %v\n", err)
 				os.Exit(1)
 			}
@@ -558,7 +571,7 @@ func main() {
 			i18n.Printf("[backup-helper] Extracting to directory: %s\n", targetDir)
 			logCtx.WriteLog("DOWNLOAD", "Extracting to directory: %s", targetDir)
 
-			err := utils.ExtractBackupStream(reader, downloadCompressType, targetDir, outputPath, cfg.Parallel, logCtx)
+			err := utils.ExtractBackupStream(reader, downloadCompressType, targetDir, outputPath, cfg.Parallel, cfg, logCtx)
 			if err != nil {
 				logCtx.WriteLog("EXTRACT", "Extraction error: %v", err)
 				// Read log content for error extraction
@@ -656,7 +669,7 @@ func main() {
 			logCtx.WriteLog("DOWNLOAD", "Saving backup data to: %s", outputPath)
 			if downloadCompressType == "zstd" {
 				// Save decompressed zstd stream
-				err := utils.ExtractBackupStream(reader, downloadCompressType, "", outputPath, cfg.Parallel, logCtx)
+				err := utils.ExtractBackupStream(reader, downloadCompressType, "", outputPath, cfg.Parallel, cfg, logCtx)
 				if err != nil {
 					logCtx.WriteLog("EXTRACT", "Save error: %v", err)
 					i18n.Printf("Save error: %v\n", err)
@@ -724,7 +737,7 @@ func main() {
 			effectiveCompressType = ""
 		}
 		if effectiveCompressType != "" {
-			if err := utils.CheckCompressionDependencies(effectiveCompressType, true); err != nil {
+			if err := utils.CheckCompressionDependencies(effectiveCompressType, true, cfg); err != nil {
 				i18n.Printf("Error: %v\n", err)
 				os.Exit(1)
 			}
@@ -732,7 +745,7 @@ func main() {
 
 		// Check xtrabackup version (run early)
 		mysqlVer := cfg.MysqlVersion
-		utils.CheckXtraBackupVersion(mysqlVer)
+		utils.CheckXtraBackupVersion(mysqlVer, cfg)
 
 		// Create log context
 		logCtx, err := utils.NewLogContext(cfg.LogDir)

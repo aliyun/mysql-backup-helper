@@ -11,8 +11,9 @@ import (
 // For backup mode: zstd needs zstd tool, qp needs qpress tool (xtrabackup --compress uses qpress internally)
 // For download mode: both zstd and qp need external tools for decompression
 // isBackupMode: true for backup mode, false for download mode
+// cfg: configuration for resolving xtrabackup/xbstream paths
 // Returns error if tool is not found or not executable
-func CheckCompressionDependencies(compressType string, isBackupMode bool) error {
+func CheckCompressionDependencies(compressType string, isBackupMode bool, cfg *Config) error {
 	switch compressType {
 	case "zstd":
 		if _, err := exec.LookPath("zstd"); err != nil {
@@ -37,11 +38,9 @@ func CheckCompressionDependencies(compressType string, isBackupMode bool) error 
 		}
 		if !isBackupMode {
 			// For download mode, also check xbstream and xtrabackup
-			if _, err := exec.LookPath("xbstream"); err != nil {
-				return fmt.Errorf("%s", i18n.Sprintf("xbstream command not found. Please install Percona XtraBackup"))
-			}
-			if _, err := exec.LookPath("xtrabackup"); err != nil {
-				return fmt.Errorf("%s", i18n.Sprintf("xtrabackup command not found. Please install Percona XtraBackup"))
+			_, _, err := ResolveXtrabackupPath(cfg)
+			if err != nil {
+				return err
 			}
 		}
 		return nil
@@ -55,24 +54,26 @@ func CheckCompressionDependencies(compressType string, isBackupMode bool) error 
 
 // CheckExtractionDependencies checks if required tools are available for extraction
 // This is used in download mode when --target-dir is specified
-func CheckExtractionDependencies(compressType string) error {
+func CheckExtractionDependencies(compressType string, cfg *Config) error {
 	switch compressType {
 	case "zstd":
 		// Need zstd for decompression and xbstream for extraction
-		if err := CheckCompressionDependencies("zstd", false); err != nil {
+		if err := CheckCompressionDependencies("zstd", false, cfg); err != nil {
 			return err
 		}
-		if _, err := exec.LookPath("xbstream"); err != nil {
-			return fmt.Errorf("%s", i18n.Sprintf("xbstream command not found. Please install Percona XtraBackup"))
+		_, _, err := ResolveXtrabackupPath(cfg)
+		if err != nil {
+			return err
 		}
 		return nil
 	case "qp":
 		// Need qpress, xbstream, and xtrabackup
-		return CheckCompressionDependencies("qp", false)
+		return CheckCompressionDependencies("qp", false, cfg)
 	case "":
 		// No compression, only need xbstream
-		if _, err := exec.LookPath("xbstream"); err != nil {
-			return fmt.Errorf("%s", i18n.Sprintf("xbstream command not found. Please install Percona XtraBackup"))
+		_, _, err := ResolveXtrabackupPath(cfg)
+		if err != nil {
+			return err
 		}
 		return nil
 	default:

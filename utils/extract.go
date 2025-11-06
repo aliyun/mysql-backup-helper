@@ -16,9 +16,10 @@ import (
 // compressType: "zstd", "qp", or "" (no compression)
 // targetDir: directory to extract files, if empty, just save compressed/uncompressed file
 // parallel: number of parallel threads (default: 4)
+// cfg: configuration for resolving xtrabackup/xbstream paths
 // logCtx: log context for writing logs
 // Returns error if extraction fails
-func ExtractBackupStream(reader io.Reader, compressType string, targetDir string, outputPath string, parallel int, logCtx *LogContext) error {
+func ExtractBackupStream(reader io.Reader, compressType string, targetDir string, outputPath string, parallel int, cfg *Config, logCtx *LogContext) error {
 	if parallel == 0 {
 		parallel = 4
 	}
@@ -55,14 +56,14 @@ func ExtractBackupStream(reader io.Reader, compressType string, targetDir string
 
 	// Extraction requested
 	if compressType == "zstd" {
-		return extractZstdStream(reader, targetDir, parallel, logCtx)
+		return extractZstdStream(reader, targetDir, parallel, cfg, logCtx)
 	} else if compressType == "qp" {
 		// qpress compression requires saving to file first, then using xtrabackup --decompress
 		// This is because xbstream doesn't support --decompress in stream mode for MySQL 5.7
-		return extractQpressStream(reader, targetDir, outputPath, parallel, logCtx)
+		return extractQpressStream(reader, targetDir, outputPath, parallel, cfg, logCtx)
 	} else {
 		// No compression, just extract with xbstream
-		return extractXbstream(reader, targetDir, parallel, logCtx)
+		return extractXbstream(reader, targetDir, parallel, cfg, logCtx)
 	}
 }
 
@@ -101,13 +102,16 @@ func saveZstdDecompressed(reader io.Reader, outputPath string, parallel int, log
 }
 
 // extractZstdStream decompresses zstd stream and extracts with xbstream
-func extractZstdStream(reader io.Reader, targetDir string, parallel int, logCtx *LogContext) error {
+func extractZstdStream(reader io.Reader, targetDir string, parallel int, cfg *Config, logCtx *LogContext) error {
 	// Check dependencies
 	if _, err := exec.LookPath("zstd"); err != nil {
 		return fmt.Errorf("%s", i18n.Sprintf("zstd command not found. Please install zstd: https://github.com/facebook/zstd"))
 	}
-	if _, err := exec.LookPath("xbstream"); err != nil {
-		return fmt.Errorf("%s", i18n.Sprintf("xbstream command not found. Please install Percona XtraBackup"))
+
+	// Resolve xbstream path
+	_, xbstreamPath, err := ResolveXtrabackupPath(cfg)
+	if err != nil {
+		return err
 	}
 
 	if parallel == 0 {
@@ -133,7 +137,7 @@ func extractZstdStream(reader io.Reader, targetDir string, parallel int, logCtx 
 		zstdCmd.Stderr = os.Stderr
 	}
 
-	xbstreamCmd := exec.Command("xbstream", "-x", fmt.Sprintf("--parallel=%d", parallel), "-C", targetDir)
+	xbstreamCmd := exec.Command(xbstreamPath, "-x", fmt.Sprintf("--parallel=%d", parallel), "-C", targetDir)
 	xbstreamCmd.Stdin, _ = zstdCmd.StdoutPipe()
 	if logCtx != nil {
 		xbstreamCmd.Stderr = logCtx.GetFile()
@@ -234,13 +238,11 @@ func extractZstdStream(reader io.Reader, targetDir string, parallel int, logCtx 
 // extractQpressStream handles qpress-compressed backup stream
 // Note: xbstream doesn't support --decompress in stream mode for MySQL 5.7
 // So we need to save to file first, then extract and decompress
-func extractQpressStream(reader io.Reader, targetDir string, outputPath string, parallel int, logCtx *LogContext) error {
-	// Check dependencies
-	if _, err := exec.LookPath("xbstream"); err != nil {
-		return fmt.Errorf("%s", i18n.Sprintf("xbstream command not found. Please install Percona XtraBackup"))
-	}
-	if _, err := exec.LookPath("xtrabackup"); err != nil {
-		return fmt.Errorf("%s", i18n.Sprintf("xtrabackup command not found. Please install Percona XtraBackup"))
+func extractQpressStream(reader io.Reader, targetDir string, outputPath string, parallel int, cfg *Config, logCtx *LogContext) error {
+	// Resolve xtrabackup and xbstream paths
+	xtrabackupPath, xbstreamPath, err := ResolveXtrabackupPath(cfg)
+	if err != nil {
+		return err
 	}
 
 	if parallel == 0 {
@@ -297,7 +299,7 @@ func extractQpressStream(reader io.Reader, targetDir string, outputPath string, 
 		logCtx.WriteLog("XBSTREAM", "Extracting with xbstream")
 	}
 
-	xbstreamCmd := exec.Command("xbstream", "-x", fmt.Sprintf("--parallel=%d", parallel), "-C", targetDir)
+	xbstreamCmd := exec.Command(xbstreamPath, "-x", fmt.Sprintf("--parallel=%d", parallel), "-C", targetDir)
 	xbstreamCmd.Stdin = extractFile
 	if logCtx != nil {
 		xbstreamCmd.Stderr = logCtx.GetFile()
@@ -321,7 +323,7 @@ func extractQpressStream(reader io.Reader, targetDir string, outputPath string, 
 	}
 
 	// Step 3: Decompress extracted files using xtrabackup --decompress
-	xtrabackupCmd := exec.Command("xtrabackup", "--decompress", fmt.Sprintf("--parallel=%d", parallel), "--target-dir", targetDir)
+	xtrabackupCmd := exec.Command(xtrabackupPath, "--decompress", fmt.Sprintf("--parallel=%d", parallel), "--target-dir", targetDir)
 	if logCtx != nil {
 		xtrabackupCmd.Stderr = logCtx.GetFile()
 		xtrabackupCmd.Stdout = logCtx.GetFile()
@@ -349,10 +351,11 @@ func extractQpressStream(reader io.Reader, targetDir string, outputPath string, 
 }
 
 // extractXbstream extracts uncompressed xbstream backup
-func extractXbstream(reader io.Reader, targetDir string, parallel int, logCtx *LogContext) error {
-	// Check dependency
-	if _, err := exec.LookPath("xbstream"); err != nil {
-		return fmt.Errorf("%s", i18n.Sprintf("xbstream command not found. Please install Percona XtraBackup"))
+func extractXbstream(reader io.Reader, targetDir string, parallel int, cfg *Config, logCtx *LogContext) error {
+	// Resolve xbstream path
+	_, xbstreamPath, err := ResolveXtrabackupPath(cfg)
+	if err != nil {
+		return err
 	}
 
 	if parallel == 0 {
@@ -369,7 +372,7 @@ func extractXbstream(reader io.Reader, targetDir string, parallel int, logCtx *L
 	}
 
 	// Extract with xbstream
-	xbstreamCmd := exec.Command("xbstream", "-x", fmt.Sprintf("--parallel=%d", parallel), "-C", targetDir)
+	xbstreamCmd := exec.Command(xbstreamPath, "-x", fmt.Sprintf("--parallel=%d", parallel), "-C", targetDir)
 	xbstreamCmd.Stdin = reader
 	if logCtx != nil {
 		xbstreamCmd.Stderr = logCtx.GetFile()
@@ -379,7 +382,7 @@ func extractXbstream(reader io.Reader, targetDir string, parallel int, logCtx *L
 		xbstreamCmd.Stdout = os.Stderr
 	}
 
-	err := xbstreamCmd.Run()
+	err = xbstreamCmd.Run()
 	if err != nil {
 		if logCtx != nil {
 			logCtx.WriteLog("XBSTREAM", "xbstream extraction failed: %v", err)

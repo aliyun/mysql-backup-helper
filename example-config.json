@@ -30,5 +30,6 @@
   "downloadOutput": "",
   "remoteOutput": "",
   "parallel": 4,
-  "useMemory": "1G"
+  "useMemory": "1G",
+  "xtrabackupPath": ""
 }
