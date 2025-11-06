@@ -68,7 +68,7 @@ A high-efficiency MySQL physical backup and OSS upload tool. Supports Percona Xt
 - **downloadOutput**: Default output path for download mode
 - **remoteOutput**: Remote save path for SSH mode
 - **ioLimit**: IO bandwidth limit (bytes per second), set to `0` to use default (200MB/s), set to `-1` for unlimited speed
-- **parallel**: Number of parallel threads for xtrabackup (default: 4)
+- **parallel**: Number of parallel threads (default: 4), used for xtrabackup backup, compression, decompression, and xbstream extraction operations
 - All config fields can be overridden by command-line arguments. Command-line arguments take precedence over config.
 
 **Note**: The tool automatically handles the following xtrabackup options without user configuration:
