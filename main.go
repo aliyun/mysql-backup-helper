@@ -45,15 +45,37 @@ func isDirEmpty(dir string) (bool, error) {
 }
 
 // promptOverwrite asks user if they want to overwrite existing files in targetDir
-func promptOverwrite(targetDir string) bool {
+// If autoYes is true, automatically returns true and shows a warning
+func promptOverwrite(targetDir string, autoYes bool) bool {
 	i18n.Printf("Warning: Target directory '%s' already exists and is not empty.\n", targetDir)
 	i18n.Printf("Extracting to this directory may overwrite existing files.\n")
+	
+	if autoYes {
+		i18n.Printf("Auto-confirming overwrite (--yes/-y flag is set)...\n")
+		return true
+	}
+	
 	i18n.Printf("Do you want to continue? (y/n): ")
 
 	var input string
 	fmt.Scanln(&input)
 	input = strings.TrimSpace(strings.ToLower(input))
 
+	return input == "y" || input == "yes"
+}
+
+// promptAIDiagnosis asks user if they want to use AI diagnosis
+// If autoYes is true, automatically returns true and shows a warning
+func promptAIDiagnosis(autoYes bool) bool {
+	if autoYes {
+		i18n.Printf("Auto-confirming AI diagnosis (--yes/-y flag is set)...\n")
+		return true
+	}
+	
+	var input string
+	i18n.Printf("Would you like to use AI diagnosis? (y/n): ")
+	fmt.Scanln(&input)
+	input = strings.TrimSpace(strings.ToLower(input))
 	return input == "y" || input == "yes"
 }
 
@@ -108,8 +130,11 @@ func main() {
 	var targetDir string
 	var parallel int
 	var useMemory string
+	var autoYes bool
 
 	flag.BoolVar(&doBackup, "backup", false, "Run xtrabackup and upload to OSS")
+	flag.BoolVar(&autoYes, "y", false, "Automatically answer 'yes' to all prompts (non-interactive mode)")
+	flag.BoolVar(&autoYes, "yes", false, "Automatically answer 'yes' to all prompts (non-interactive mode)")
 	flag.BoolVar(&doDownload, "download", false, "Download backup from TCP stream (listen on port)")
 	flag.BoolVar(&doPrepare, "prepare", false, "Prepare backup for restore (xtrabackup --prepare)")
 	flag.StringVar(&downloadOutput, "output", "", "Output file path for download mode (use '-' for stdout, default: backup_YYYYMMDDHHMMSS.xb)")
@@ -190,7 +215,7 @@ func main() {
 	if compressType == "__NOT_SET__" {
 		// Flag was not passed, use config or empty
 		if cfg.CompressType != "" {
-			compressType = cfg.CompressType
+		compressType = cfg.CompressType
 		} else {
 			compressType = ""
 		}
@@ -335,10 +360,7 @@ func main() {
 			case "off":
 				// do nothing
 			default:
-				var input string
-				i18n.Printf("Would you like to use AI diagnosis? (y/n): ")
-				fmt.Scanln(&input)
-				if input == "y" || input == "Y" || input == "yes" || input == "Yes" {
+				if promptAIDiagnosis(autoYes) {
 					logContent, _ := os.ReadFile(logCtx.GetFileName())
 					aiSuggestion, err := utils.DiagnoseWithAliQwen(cfg, "PREPARE", string(logContent))
 					if err != nil {
@@ -496,7 +518,7 @@ func main() {
 					}
 					if !empty {
 						// Directory exists and is not empty, ask user for confirmation
-						if !promptOverwrite(targetDir) {
+						if !promptOverwrite(targetDir, autoYes) {
 							logCtx.WriteLog("DOWNLOAD", "User cancelled extraction to non-empty directory: %s", targetDir)
 							i18n.Printf("Extraction cancelled.\n")
 							os.Exit(0)
@@ -571,10 +593,7 @@ func main() {
 				case "off":
 					// do nothing
 				default:
-					var input string
-					i18n.Printf("Would you like to use AI diagnosis? (y/n): ")
-					fmt.Scanln(&input)
-					if input == "y" || input == "Y" || input == "yes" || input == "Yes" {
+					if promptAIDiagnosis(autoYes) {
 						logContent, _ := os.ReadFile(logCtx.GetFileName())
 						aiSuggestion, err := utils.DiagnoseWithAliQwen(cfg, "EXTRACT", string(logContent))
 						if err != nil {
@@ -746,10 +765,10 @@ func main() {
 		// Set cfg.CompressType based on effectiveCompressType
 		cfg.CompressType = effectiveCompressType
 		switch effectiveCompressType {
-		case "zstd":
-			objectSuffix = ".xb.zst"
+			case "zstd":
+				objectSuffix = ".xb.zst"
 		case "qp":
-			objectSuffix = "_qp.xb"
+				objectSuffix = "_qp.xb"
 		default:
 			objectSuffix = ".xb"
 		}
@@ -845,8 +864,8 @@ func main() {
 					if err != nil {
 						i18n.Printf("SSH receiver error: %v\n", err)
 						cmd.Process.Kill()
-						os.Exit(1)
-					}
+				os.Exit(1)
+			}
 
 					streamPort = remotePort
 					if sshPort > 0 {
@@ -914,10 +933,10 @@ func main() {
 				tcpWriter, _, closerFunc, actualPort, localIP, err := utils.StartStreamSender(streamPort, enableHandshake, streamKey, totalSize, cfg.CompressType != "", logCtx)
 				_ = actualPort // Port info already displayed in StartStreamSender
 				_ = localIP    // IP info already displayed in StartStreamSender
-				if err != nil {
-					i18n.Printf("Stream server error: %v\n", err)
+			if err != nil {
+				i18n.Printf("Stream server error: %v\n", err)
 					cmd.Process.Kill()
-					os.Exit(1)
+				os.Exit(1)
 				}
 				writer = tcpWriter
 				closer = closerFunc
@@ -958,7 +977,7 @@ func main() {
 			if errorSummary != "" {
 				i18n.Printf("Backup failed. Error summary:\n%s\n", errorSummary)
 			} else {
-				i18n.Printf("Backup failed (no 'completed OK!').\n")
+			i18n.Printf("Backup failed (no 'completed OK!').\n")
 			}
 			i18n.Printf("Log file: %s\n", logCtx.GetFileName())
 
@@ -978,10 +997,7 @@ func main() {
 			case "off":
 				// do nothing, skip ai diagnose
 			default:
-				var input string
-				i18n.Printf("Would you like to use AI diagnosis? (y/n): ")
-				fmt.Scanln(&input)
-				if input == "y" || input == "Y" || input == "yes" || input == "Yes" {
+				if promptAIDiagnosis(autoYes) {
 					aiSuggestion, err := utils.DiagnoseWithAliQwen(cfg, "BACKUP", string(logContent))
 					if err != nil {
 						i18n.Printf("AI diagnosis failed: %v\n", err)
@@ -1084,10 +1100,10 @@ func main() {
 		// Set cfg.CompressType based on effectiveCompressType
 		cfg.CompressType = effectiveCompressType
 		switch effectiveCompressType {
-		case "zstd":
-			objectSuffix = ".xb.zst"
+			case "zstd":
+				objectSuffix = ".xb.zst"
 		case "qp":
-			objectSuffix = "_qp.xb"
+				objectSuffix = "_qp.xb"
 		default:
 			objectSuffix = ".xb"
 		}
@@ -1133,7 +1149,7 @@ func main() {
 			// streamPort 0 means auto-find available port (only when not using stream-host)
 			if streamHost == "" {
 				if streamPort == 0 && !isFlagPassed("stream-port") && cfg.StreamPort > 0 {
-					streamPort = cfg.StreamPort
+				streamPort = cfg.StreamPort
 				}
 				// Show equivalent command (before starting server, so we show original port)
 				equivalentSource := existedBackup
@@ -1178,17 +1194,17 @@ func main() {
 				writer, _, closer, _, err = utils.StartStreamClient(streamHost, streamPort, enableHandshake, streamKey, totalSize, isCompressed, logCtx)
 				if err != nil {
 					i18n.Printf("Stream client error: %v\n", err)
-					os.Exit(1)
-				}
+				os.Exit(1)
+			}
 			} else {
 				// Passive connection: listen locally and wait for connection
 				// streamPort can be 0 now (auto-find available port)
 				tcpWriter, _, closerFunc, actualPort, localIP, err := utils.StartStreamSender(streamPort, enableHandshake, streamKey, totalSize, cfg.CompressType != "", logCtx)
 				_ = actualPort // Port info already displayed in StartStreamSender
 				_ = localIP    // IP info already displayed in StartStreamSender
-				if err != nil {
-					i18n.Printf("Stream server error: %v\n", err)
-					os.Exit(1)
+			if err != nil {
+				i18n.Printf("Stream server error: %v\n", err)
+				os.Exit(1)
 				}
 				writer = tcpWriter
 				closer = closerFunc

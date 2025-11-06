@@ -180,6 +180,8 @@ func InitEn() {
 	message.SetString(language.English, "Clearing target directory...", "Clearing target directory...")
 	message.SetString(language.English, "Target directory cleared successfully", "Target directory cleared successfully")
 	message.SetString(language.English, "Target directory cleared. Proceeding with extraction...", "Target directory cleared. Proceeding with extraction...")
+	message.SetString(language.English, "Auto-confirming overwrite (--yes/-y flag is set)...", "Auto-confirming overwrite (--yes/-y flag is set)...")
+	message.SetString(language.English, "Auto-confirming AI diagnosis (--yes/-y flag is set)...", "Auto-confirming AI diagnosis (--yes/-y flag is set)...")
 	message.SetString(language.SimplifiedChinese, "Warning: Target directory '%s' already exists and is not empty.", "警告：目标目录 '%s' 已存在且不为空。")
 	message.SetString(language.SimplifiedChinese, "Extracting to this directory may overwrite existing files.", "提取到此目录可能会覆盖现有文件。")
 	message.SetString(language.SimplifiedChinese, "Do you want to continue? (y/n): ", "是否要继续？(y/n): ")
@@ -188,6 +190,8 @@ func InitEn() {
 	message.SetString(language.SimplifiedChinese, "Clearing target directory...", "正在清空目标目录...")
 	message.SetString(language.SimplifiedChinese, "Target directory cleared successfully", "目标目录已清空")
 	message.SetString(language.SimplifiedChinese, "Target directory cleared. Proceeding with extraction...", "目标目录已清空，继续提取...")
+	message.SetString(language.SimplifiedChinese, "Auto-confirming overwrite (--yes/-y flag is set)...", "自动确认覆盖（--yes/-y 标志已设置）...")
+	message.SetString(language.SimplifiedChinese, "Auto-confirming AI diagnosis (--yes/-y flag is set)...", "自动确认AI诊断（--yes/-y 标志已设置）...")
 
 	// Backup file validation messages (Chinese)
 	message.SetString(language.SimplifiedChinese, "Validating backup file: %s", "正在校验备份文件: %s")
