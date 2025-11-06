@@ -108,6 +108,7 @@ A high-efficiency MySQL physical backup and OSS upload tool. Supports Percona Xt
 | --io-limit           | IO bandwidth limit with units (e.g., '100MB/s', '1GB/s') or bytes per second. Use -1 for unlimited speed |
 | --parallel           | Number of parallel threads (default: 4), used for xtrabackup backup (--parallel), qpress compression (--compress-threads), zstd compression/decompression (-T), xbstream extraction (--parallel), and xtrabackup decompression (--parallel) |
 | --use-memory         | Memory to use for prepare operation (e.g., '1G', '512M'). Default: 1G |
+| -y, --yes            | Non-interactive mode: automatically answer 'yes' to all prompts (including directory overwrite confirmation and AI diagnosis confirmation) |
 | --version, -v        | Show version information                                               |
 
 ---
@@ -325,12 +326,16 @@ After backup is complete, execute prepare to make the backup ready for restore:
 
 # Download with progress display (requires estimated size)
 ./backup-helper --download --stream-port 9999 --estimated-size 1GB
+
+# Non-interactive mode: automatically confirm all prompts
+./backup-helper --download --stream-port 9999 --target-dir /backup/mysql --compress=zstd -y
 ```
 
 **Note**:
 - If the directory specified by `--target-dir` already exists and is not empty, the program will prompt you to confirm overwriting existing files
 - Enter `y` or `yes` to continue extraction (may overwrite existing files)
 - Enter `n` or any other value to cancel extraction and exit
+- Use `-y` or `--yes` flag to automatically confirm all prompts (non-interactive mode), suitable for scripts and automation scenarios
 
 **Download mode compression type notes:**
 

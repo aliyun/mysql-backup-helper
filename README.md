@@ -108,6 +108,7 @@
 | --io-limit           | IO 带宽限制，支持单位（如 '100MB/s', '1GB/s'）或字节/秒，使用 -1 表示不限速 |
 | --parallel           | 并行线程数（默认：4），用于 xtrabackup 备份（--parallel）、qpress 压缩（--compress-threads）、zstd 压缩/解压缩（-T）、xbstream 解包（--parallel）和 xtrabackup 解压缩（--parallel） |
 | --use-memory         | 准备操作使用的内存大小（如 '1G', '512M'），默认：1G          |
+| -y, --yes            | 非交互模式：自动对所有提示回答 'yes'（包括目录覆盖确认和 AI 诊断确认） |
 | --version, -v        | 显示版本信息                                                      |
 
 ---
@@ -325,12 +326,16 @@ cat backup.xb | ./backup-helper --config config.json --existed-backup - --mode=s
 
 # 带进度显示（需要提供预估大小）
 ./backup-helper --download --stream-port 9999 --estimated-size 1GB
+
+# 非交互模式：自动确认所有提示
+./backup-helper --download --stream-port 9999 --target-dir /backup/mysql --compress=zstd -y
 ```
 
 **注意**：
 - 如果 `--target-dir` 指定的目录已存在且不为空，程序会询问是否覆盖现有文件
 - 输入 `y` 或 `yes` 继续提取（可能覆盖现有文件）
 - 输入 `n` 或任何其他值取消提取并退出
+- 使用 `-y` 或 `--yes` 参数可以自动确认所有提示（非交互模式），适合脚本和自动化场景
 
 **下载模式压缩类型说明：**
 
