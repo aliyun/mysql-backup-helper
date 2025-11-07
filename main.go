@@ -980,8 +980,8 @@ func main() {
 			db = utils.GetConnection(host, port, user, password)
 			defer db.Close()
 		}
-		options := utils.CollectVariableFromMySQLServer(db)
-		utils.Check(options, cfg)
+		// Note: Pre-check already performed MySQL parameter checks, so we skip CollectVariableFromMySQLServer and Check here
+		// to avoid duplicate output. cfg.MysqlVersion is already set by CheckForBackupMode.
 
 		// Display IO limit after parameter check
 		if cfg.IOLimit == -1 {

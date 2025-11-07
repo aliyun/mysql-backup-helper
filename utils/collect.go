@@ -7,6 +7,11 @@ import (
 )
 
 func CollectVariableFromMySQLServer(db *sql.DB) map[string]string {
+	return CollectVariableFromMySQLServerSilent(db, false)
+}
+
+// CollectVariableFromMySQLServerSilent collects MySQL variables, with optional silent mode
+func CollectVariableFromMySQLServerSilent(db *sql.DB, silent bool) map[string]string {
 	items := []string{
 		"version",
 		"gtid_mode",
@@ -16,12 +21,18 @@ func CollectVariableFromMySQLServer(db *sql.DB) map[string]string {
 		"log_bin",
 	}
 	result := make(map[string]string)
-	i18n.Printf("Get parameter for checking...\n")
+	if !silent {
+		i18n.Printf("Get parameter for checking...\n")
+	}
 	for _, item := range items {
 		val := GetMySQLVariable(db, item)
-		i18n.Printf("\t%s=%s\n", item, val)
+		if !silent {
+			i18n.Printf("\t%s=%s\n", item, val)
+		}
 		result[item] = val
 	}
-	i18n.Printf("\n")
+	if !silent {
+		i18n.Printf("\n")
+	}
 	return result
 }

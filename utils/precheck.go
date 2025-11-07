@@ -247,8 +247,8 @@ func CheckMySQLCompatibility(db *sql.DB, cfg *Config) []CheckResult {
 		return results
 	}
 
-	// Collect MySQL variables
-	options := CollectVariableFromMySQLServer(db)
+	// Collect MySQL variables (silent mode to avoid duplicate output)
+	options := CollectVariableFromMySQLServerSilent(db, true)
 
 	// Check MySQL version
 	if version, ok := options["version"]; ok && version != "" {
