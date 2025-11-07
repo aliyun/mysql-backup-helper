@@ -334,15 +334,15 @@ After backup is complete, execute prepare to make the backup ready for restore:
 # Use config file
 ./backup-helper --config config.json --prepare --target-dir=/path/to/backup
 
-# Optional: Provide MySQL connection info to auto-get --defaults-file
-./backup-helper --prepare --target-dir=/path/to/backup --host=127.0.0.1 --user=root --port=3306
+# Optional: Provide MySQL connection info and --defaults-file
+./backup-helper --prepare --target-dir=/path/to/backup --host=127.0.0.1 --user=root --port=3306 --defaults-file=/etc/my.cnf
 ```
 
 **Notes**:
 - `--target-dir`: Required, specifies the backup directory to prepare
 - `--parallel`: Number of parallel threads, default 4 (can be set in config file or command line)
 - `--use-memory`: Memory to use for prepare operation, default 1G (supports units: G, M, K)
-- `--host`, `--user`, `--port`: Optional, if provided can auto-get `--defaults-file`
+- `--defaults-file`: Optional, manually specify MySQL config file path (if not specified, no auto-detection is performed)
 
 ### 16. Download mode: Receive backup data from TCP stream
 
