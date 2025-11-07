@@ -121,6 +121,7 @@ A high-efficiency MySQL physical backup and OSS upload tool. Supports Percona Xt
 | --io-limit           | IO bandwidth limit with units (e.g., '100MB/s', '1GB/s') or bytes per second. Use -1 for unlimited speed |
 | --parallel           | Number of parallel threads (default: 4), used for xtrabackup backup (--parallel), qpress compression (--compress-threads), zstd compression/decompression (-T), xbstream extraction (--parallel), and xtrabackup decompression (--parallel) |
 | --use-memory         | Memory to use for prepare operation (e.g., '1G', '512M'). Default: 1G |
+| --defaults-file     | Path to MySQL configuration file (my.cnf). If not specified, no auto-detection is performed and --defaults-file will not be passed to xtrabackup |
 | --xtrabackup-path    | Path to xtrabackup binary or directory containing xtrabackup/xbstream (overrides config file and environment variable) |
 | -y, --yes            | Non-interactive mode: automatically answer 'yes' to all prompts (including directory overwrite confirmation and AI diagnosis confirmation) |
 | --version, -v        | Show version information                                               |

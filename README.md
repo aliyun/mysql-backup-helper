@@ -121,6 +121,7 @@
 | --io-limit           | IO 带宽限制，支持单位（如 '100MB/s', '1GB/s'）或字节/秒，使用 -1 表示不限速 |
 | --parallel           | 并行线程数（默认：4），用于 xtrabackup 备份（--parallel）、qpress 压缩（--compress-threads）、zstd 压缩/解压缩（-T）、xbstream 解包（--parallel）和 xtrabackup 解压缩（--parallel） |
 | --use-memory         | 准备操作使用的内存大小（如 '1G', '512M'），默认：1G          |
+| --defaults-file      | MySQL 配置文件路径（my.cnf）。如果不指定，不会自动检测，也不会传递给 xtrabackup |
 | --xtrabackup-path    | xtrabackup 二进制文件路径或包含 xtrabackup/xbstream 的目录路径（覆盖配置文件和环境变量） |
 | -y, --yes            | 非交互模式：自动对所有提示回答 'yes'（包括目录覆盖确认和 AI 诊断确认） |
 | --version, -v        | 显示版本信息                                                      |
