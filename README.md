@@ -14,6 +14,10 @@
 - **Percona XtraBackup**：用于 MySQL 物理备份
   - [下载地址](https://www.percona.com/downloads/Percona-XtraBackup-LATEST/)
   - 安装后确保 `xtrabackup` 命令在 PATH 中
+- **MySQL 服务器连接**：工具通过 TCP/IP 协议连接 MySQL 服务器
+  - 不需要安装 `mysql` 命令行客户端工具
+  - 不需要本地 `mysqld` 或 socket 文件
+  - 只需要能够通过 TCP/IP 连接到 MySQL 服务器（host:port）
 
 ### 可选依赖
 - **zstd**：用于 zstd 压缩（当使用 `--compress=zstd` 时）
@@ -82,6 +86,8 @@
 - 工具支持广泛的 xtrabackup/xbstream 版本，包括不支持 `--version` 参数的旧版本（如 xbstream 2.4.12）
 - 工具会使用多重回退机制验证二进制文件的可执行性（`--version` → `-h` → `--help` → 无参数运行）
 - `--prepare` 模式不需要 xbstream，仅需要 xtrabackup
+- 工具不依赖 `mysql` 命令行客户端，通过 Go MySQL 驱动直接连接 MySQL 服务器
+- 获取配置文件路径时，如果无法查询 MySQL 变量（如权限不足），会优雅降级到检查常见路径
 
 ---
 

@@ -14,6 +14,10 @@ A high-efficiency MySQL physical backup and OSS upload tool. Supports Percona Xt
 - **Percona XtraBackup**: For MySQL physical backup
   - [Download](https://www.percona.com/downloads/Percona-XtraBackup-LATEST/)
   - Ensure `xtrabackup` is in your PATH
+- **MySQL Server Connection**: The tool connects to MySQL server via TCP/IP protocol
+  - No need to install `mysql` command-line client tool
+  - No need for local `mysqld` or socket files
+  - Only requires TCP/IP connectivity to MySQL server (host:port)
 
 ### Optional
 - **zstd**: For zstd compression (when using `--compress=zstd`)
@@ -82,6 +86,8 @@ A high-efficiency MySQL physical backup and OSS upload tool. Supports Percona Xt
 - The tool supports a wide range of xtrabackup/xbstream versions, including older versions that don't support the `--version` flag (e.g., xbstream 2.4.12)
 - The tool uses multiple fallback methods to verify binary executability (`--version` → `-h` → `--help` → run without arguments)
 - `--prepare` mode does not require xbstream, only xtrabackup is needed
+- The tool does not depend on `mysql` command-line client, connects directly to MySQL server via Go MySQL driver
+- When getting config file path, if MySQL variables cannot be queried (e.g., insufficient permissions), it gracefully falls back to checking common paths
 
 ---
 
