@@ -257,6 +257,110 @@ func StartStreamClient(host string, port int, enableHandshake bool, handshakeKey
 	}{Writer: progressWriter, Closer: conn}, tracker, closer, addr, nil
 }
 
+// StartStreamClientReader starts a TCP client connection to the given host:port for reading data.
+// It actively connects to the remote server and returns a ReadCloser for reading data.
+// If handshake is enabled, it will wait for the server's handshake message and respond with "OK".
+// Returns the remote address for display.
+func StartStreamClientReader(host string, port int, enableHandshake bool, handshakeKey string, totalSize int64, isCompressed bool, logCtx *LogContext) (io.ReadCloser, *ProgressTracker, func(), string, error) {
+	if host == "" {
+		return nil, nil, nil, "", fmt.Errorf("stream-host cannot be empty")
+	}
+	if port <= 0 {
+		return nil, nil, nil, "", fmt.Errorf("stream-port must be specified when using --stream-host")
+	}
+
+	addr := fmt.Sprintf("%s:%d", host, port)
+	fmt.Printf("[backup-helper] Connecting to %s...\n", addr)
+	if logCtx != nil {
+		logCtx.WriteLog("TCP", "Connecting to %s", addr)
+	}
+
+	// Create progress tracker
+	tracker := NewProgressTrackerWithCompression(totalSize, isCompressed)
+	tracker.mode = "download"
+
+	conn, err := net.DialTimeout("tcp", addr, 30*time.Second)
+	if err != nil {
+		if logCtx != nil {
+			logCtx.WriteLog("TCP", "Failed to connect to %s: %v", addr, err)
+		}
+		return nil, nil, nil, "", fmt.Errorf("failed to connect to %s: %v", addr, err)
+	}
+
+	fmt.Printf("[backup-helper] Connected to %s\n", addr)
+	if logCtx != nil {
+		logCtx.WriteLog("TCP", "Connected to %s", addr)
+	}
+
+	if !enableHandshake {
+		if logCtx != nil {
+			logCtx.WriteLog("TCP", "Transfer started (no handshake)")
+		}
+		closer := func() {
+			tracker.Complete()
+			conn.Close()
+			if logCtx != nil {
+				logCtx.WriteLog("TCP", "Transfer completed")
+			}
+		}
+		progressReader := NewProgressReader(conn, tracker, 64*1024)
+		return struct {
+			io.Reader
+			io.Closer
+		}{Reader: progressReader, Closer: conn}, tracker, closer, addr, nil
+	}
+
+	// Wait for handshake from server
+	conn.SetReadDeadline(time.Now().Add(10 * time.Second))
+	reader := bufio.NewReader(conn)
+	handshakeMsg, err := reader.ReadString('\n')
+	if err != nil {
+		conn.Close()
+		if logCtx != nil {
+			logCtx.WriteLog("TCP", "Failed to receive handshake: %v", err)
+		}
+		return nil, nil, nil, "", fmt.Errorf("failed to receive handshake from %s: %v", addr, err)
+	}
+
+	handshakeMsg = strings.TrimSpace(handshakeMsg)
+	if handshakeMsg != handshakeKey {
+		conn.Close()
+		if logCtx != nil {
+			logCtx.WriteLog("TCP", "Handshake failed: received '%s', expected '%s'", handshakeMsg, handshakeKey)
+		}
+		return nil, nil, nil, "", fmt.Errorf("handshake failed: received '%s' from %s, expected '%s'", handshakeMsg, addr, handshakeKey)
+	}
+
+	// Send OK response
+	_, err = conn.Write([]byte("OK\n"))
+	if err != nil {
+		conn.Close()
+		if logCtx != nil {
+			logCtx.WriteLog("TCP", "Failed to send handshake response: %v", err)
+		}
+		return nil, nil, nil, "", fmt.Errorf("failed to send handshake response to %s: %v", addr, err)
+	}
+
+	conn.SetReadDeadline(time.Time{}) // cancel timeout
+	fmt.Printf("[backup-helper] Handshake OK, start receiving backup from %s...\n", addr)
+	if logCtx != nil {
+		logCtx.WriteLog("TCP", "Handshake OK, transfer started")
+	}
+
+	closer := func() {
+		tracker.Complete()
+		conn.Close()
+		if logCtx != nil {
+			logCtx.WriteLog("TCP", "Transfer completed")
+		}
+	}
+	progressReader := NewProgressReader(conn, tracker, 64*1024)
+	return struct {
+		io.Reader
+		io.Closer
+	}{Reader: progressReader, Closer: conn}, tracker, closer, addr, nil
+}
+
 // StartStreamReceiver starts a TCP server on the given port for receiving data.
 // It accepts connections and returns a ReadCloser for reading data from the remote client.
 // If port is 0, it will automatically find an available port.

@@ -677,6 +677,11 @@ func main() {
 		}
 		logCtx.WriteLog("DOWNLOAD", "Starting download mode")
 
+		// Parse stream-host from command line or config
+		if streamHost == "" && cfg.StreamHost != "" {
+			streamHost = cfg.StreamHost
+		}
+
 		// Parse stream-port from command line or config
 		if streamPort == 0 && !isFlagPassed("stream-port") && cfg.StreamPort > 0 {
 			streamPort = cfg.StreamPort
@@ -724,16 +729,47 @@ func main() {
 			}
 		}
 
-		// Start TCP receiver
+		// Start TCP receiver or client based on stream-host
 		isCompressed := downloadCompressType != ""
-		logCtx.WriteLog("DOWNLOAD", "Starting TCP receiver on port %d", streamPort)
-		receiver, tracker, closer, actualPort, localIP, err := utils.StartStreamReceiver(streamPort, enableHandshake, streamKey, estimatedSize, isCompressed, logCtx)
-		_ = actualPort // Port info already displayed in StartStreamReceiver
-		_ = localIP    // IP info already displayed in StartStreamReceiver
-		if err != nil {
-			logCtx.WriteLog("DOWNLOAD", "Stream receiver error: %v", err)
-			i18n.Fprintf(os.Stderr, "Stream receiver error: %v\n", err)
-			os.Exit(1)
+		var receiver io.ReadCloser
+		var tracker *utils.ProgressTracker
+		var closer func()
+
+		if streamHost != "" && streamPort > 0 {
+			// Active mode: connect to remote server to pull data
+			logCtx.WriteLog("DOWNLOAD", "Connecting to remote server %s:%d to pull data", streamHost, streamPort)
+			if outputPath == "-" {
+				i18n.Fprintf(os.Stderr, "[backup-helper] Connecting to %s:%d...\n", streamHost, streamPort)
+			} else {
+				i18n.Printf("[backup-helper] Connecting to %s:%d...\n", streamHost, streamPort)
+			}
+			receiver, tracker, closer, _, err = utils.StartStreamClientReader(streamHost, streamPort, enableHandshake, streamKey, estimatedSize, isCompressed, logCtx)
+			if err != nil {
+				logCtx.WriteLog("DOWNLOAD", "Stream client error: %v", err)
+				if outputPath == "-" {
+					i18n.Fprintf(os.Stderr, "Stream client error: %v\n", err)
+				} else {
+					i18n.Printf("Stream client error: %v\n", err)
+				}
+				os.Exit(1)
+			}
+		} else {
+			// Passive mode: listen locally and wait for connection
+			logCtx.WriteLog("DOWNLOAD", "Starting TCP receiver on port %d", streamPort)
+			var actualPort int
+			var localIP string
+			receiver, tracker, closer, actualPort, localIP, err = utils.StartStreamReceiver(streamPort, enableHandshake, streamKey, estimatedSize, isCompressed, logCtx)
+			_ = actualPort // Port info already displayed in StartStreamReceiver
+			_ = localIP    // IP info already displayed in StartStreamReceiver
+			if err != nil {
+				logCtx.WriteLog("DOWNLOAD", "Stream receiver error: %v", err)
+				if outputPath == "-" {
+					i18n.Fprintf(os.Stderr, "Stream receiver error: %v\n", err)
+				} else {
+					i18n.Printf("Stream receiver error: %v\n", err)
+				}
+				os.Exit(1)
+			}
 		}
 		defer closer() // This will call tracker.Complete() internally
 
