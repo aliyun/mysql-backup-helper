@@ -12,7 +12,7 @@
   "mysqlUser": "root",
   "mysqlPassword": "password",
   "compressType": "zstd",
-  "mode": "oss",
+  "mode": "stream",
   "streamPort": 9999,
   "streamHost": "",
   "mysqlVersion": {

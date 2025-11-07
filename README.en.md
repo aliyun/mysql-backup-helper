@@ -106,7 +106,7 @@ A high-efficiency MySQL physical backup and OSS upload tool. Supports Percona Xt
 | --prepare          | Prepare mode: execute xtrabackup --prepare to make backup ready for restore |
 | --output           | Output file path for download mode (use '-' for stdout, default: backup_YYYYMMDDHHMMSS.xb) |
 | --target-dir       | Directory: extraction directory for download mode, backup directory for prepare mode |
-| --mode             | Backup mode: `oss` (upload to OSS) or `stream` (push to TCP)     |
+| --mode             | Backup mode: `oss` (upload to OSS) or `stream` (push to TCP, default)     |
 | --stream-port      | Local port for streaming mode (e.g. 9999, 0 = auto-find available port), or remote port when --stream-host is specified |
 | --stream-host      | Remote host IP (e.g., '192.168.1.100'). When specified, actively connects to remote server to push data, similar to `nc host port` |
 | --ssh              | Use SSH to automatically start receiver on remote host (requires --stream-host, relies on system SSH config) |
