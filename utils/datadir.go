@@ -51,8 +51,9 @@ func CalculateBackupSize(datadir string) (int64, error) {
 			shouldBackup = true
 		}
 
+		// binlog and relay log are NOT backed up by xtrabackup, so exclude them
 		if strings.HasPrefix(base, "binlog") || strings.HasPrefix(base, "relay-bin") {
-			shouldBackup = true
+			shouldBackup = false
 		}
 
 		if shouldBackup {
