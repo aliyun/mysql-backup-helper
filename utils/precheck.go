@@ -387,7 +387,7 @@ func CheckForBackupMode(cfg *Config, compressType string, db *sql.DB) []CheckRes
 			Status:  "ERROR",
 			Item:    "MySQL connection",
 			Value:   "not available",
-			Message: "MySQL connection is required for backup mode. Please provide --host, --user, and --password.",
+			Message: "MySQL connection is required for backup mode. Please provide --host, --port, --user, and --password.",
 		})
 	} else {
 		// Check MySQL compatibility
