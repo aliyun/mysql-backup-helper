@@ -78,7 +78,7 @@
 - 其它参数可通过命令行覆盖，命令行参数优先于配置文件。
 
 **注意**：工具会自动处理以下 xtrabackup 选项，无需用户配置：
-- `--defaults-file`：自动从 MySQL 连接获取配置文件路径（my.cnf），并作为第一个参数传递给 xtrabackup
+- `--defaults-file`：可通过 `--defaults-file` 参数手动指定 MySQL 配置文件路径（my.cnf）。如果不指定，不会自动检测，避免使用错误的配置文件
 - `--close-files=1`：自动启用，用于处理大量表的情况
 - 文件描述符限制：自动设置为 655360（通过 ulimit）
 
@@ -101,6 +101,7 @@
 | --user              | MySQL 用户名（优先于配置文件）                               |
 | --password          | MySQL 密码（优先于配置文件，未指定则交互输入）               |
 | --backup            | 启动备份流程（否则只做参数检查）                             |
+| --check             | 预检查模式：执行预检验证。可单独使用（检查所有模式）或与其他模式组合（如 `--check --backup` 只检查备份模式） |
 | --download          | 下载模式：从 TCP 流接收备份数据并保存                       |
 | --prepare           | 准备模式：执行 xtrabackup --prepare 使备份可用于恢复         |
 | --output            | 下载模式输出文件路径（使用 '-' 表示输出到 stdout，默认：backup_YYYYMMDDHHMMSS.xb） |
@@ -223,25 +224,61 @@ nc 192.168.1.100 54321 > streamed-backup.xb
 - 传输完成后自动清理远程进程
 - 类似 `rsync -e ssh` 的使用方式，如果 SSH 密钥已配置好，直接就能用
 
-### 6. 仅做参数检查（不备份）
+### 6. 预检查模式（--check）
+
+`--check` 模式可以单独使用，也可以与其他模式组合使用：
+
+```sh
+# 单独使用：检查所有模式（BACKUP、DOWNLOAD、PREPARE）
+./backup-helper --check
+
+# 检查所有模式（包括 MySQL 兼容性检查）
+./backup-helper --check --host=127.0.0.1 --user=root --password=yourpass --port=3306
+
+# 只检查备份模式（不执行备份）
+./backup-helper --check --backup --host=127.0.0.1 --user=root --password=yourpass
+
+# 只检查下载模式（不执行下载）
+./backup-helper --check --download --target-dir=/path/to/extract
+
+# 只检查准备模式（不执行准备）
+./backup-helper --check --prepare --target-dir=/path/to/backup
+
+# 指定压缩类型进行检查
+./backup-helper --check --compress=zstd --host=127.0.0.1 --user=root --password=yourpass
+```
+
+**检查内容：**
+- **依赖检查**：验证 xtrabackup、xbstream、zstd、qpress 等工具是否已安装
+- **MySQL 兼容性检查**（备份模式）：MySQL 版本、xtrabackup 版本兼容性、数据大小估算、复制参数、配置文件验证
+- **系统资源检查**（单独 --check 时）：CPU 核心数、内存大小、网络接口
+- **参数推荐**（备份模式）：基于系统资源推荐 parallel、io-limit、use-memory 等参数
+- **目标目录检查**（下载/准备模式）：验证目录是否存在、可写、包含备份文件等
+
+**重要提示：**
+- 当使用 `--backup`、`--download` 或 `--prepare` 时，工具会在执行前自动进行预检查
+- 如果预检查发现重大问题（ERROR），工具会停止执行并提示修复
+- 使用 `--check` 组合模式（如 `--check --backup`）时，只进行检查，不执行实际操作
+
+### 7. 仅做参数检查（不备份）
 
 ```sh
 ./backup-helper --config config.json
 ```
 
-### 7. 纯命令行参数（无 config.json）
+### 8. 纯命令行参数（无 config.json）
 
 ```sh
 ./backup-helper --host=127.0.0.1 --user=root --password=123456 --port=3306 --backup --mode=oss --compress=qp
 ```
 
-### 8. 上传已存在的备份文件到 OSS
+### 9. 上传已存在的备份文件到 OSS
 
 ```sh
 ./backup-helper --config config.json --existed-backup backup.xb --mode=oss
 ```
 
-### 9. 通过 TCP 流式传输已存在的备份文件
+### 10. 通过 TCP 流式传输已存在的备份文件
 
 ```sh
 ./backup-helper --config config.json --existed-backup backup.xb --mode=stream --stream-port=9999
@@ -249,33 +286,33 @@ nc 192.168.1.100 54321 > streamed-backup.xb
 nc 127.0.0.1 9999 > streamed-backup.xb
 ```
 
-### 10. 使用 cat 命令从 stdin 读取并上传到 OSS
+### 11. 使用 cat 命令从 stdin 读取并上传到 OSS
 
 ```sh
 cat backup.xb | ./backup-helper --config config.json --existed-backup - --mode=oss
 ```
 
-### 11. 使用 cat 命令从 stdin 读取并通过 TCP 传输
+### 12. 使用 cat 命令从 stdin 读取并通过 TCP 传输
 
 ```sh
 cat backup.xb | ./backup-helper --config config.json --existed-backup - --mode=stream --stream-port=9999
 ```
 
-### 12. 手动指定上传限速（如限制到 100 MB/s）
+### 13. 手动指定上传限速（如限制到 100 MB/s）
 
 ```sh
 ./backup-helper --config config.json --backup --mode=oss --io-limit 100MB/s
 # 支持单位：KB/s, MB/s, GB/s, TB/s，也可以直接使用字节/秒
 ```
 
-### 13. 禁用限速（不限速上传）
+### 14. 禁用限速（不限速上传）
 
 ```sh
 ./backup-helper --config config.json --backup --mode=oss --io-limit -1
 # 使用 -1 表示完全禁用限速，以最大速度上传
 ```
 
-### 14. 指定预估大小以显示准确的进度
+### 15. 指定预估大小以显示准确的进度
 
 ```sh
 ./backup-helper --config config.json --backup --mode=oss --estimated-size 1GB

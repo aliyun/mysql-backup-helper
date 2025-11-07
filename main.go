@@ -108,6 +108,7 @@ func main() {
 	var doBackup bool
 	var doDownload bool
 	var doPrepare bool
+	var doCheck bool
 	var configPath string
 	var host, user, password string
 	var port int
@@ -132,18 +133,21 @@ func main() {
 	var useMemory string
 	var autoYes bool
 	var xtrabackupPath string
+	var defaultsFile string
 
 	flag.BoolVar(&doBackup, "backup", false, "Run xtrabackup and upload to OSS")
 	flag.BoolVar(&autoYes, "y", false, "Automatically answer 'yes' to all prompts (non-interactive mode)")
 	flag.BoolVar(&autoYes, "yes", false, "Automatically answer 'yes' to all prompts (non-interactive mode)")
 	flag.BoolVar(&doDownload, "download", false, "Download backup from TCP stream (listen on port)")
 	flag.BoolVar(&doPrepare, "prepare", false, "Prepare backup for restore (xtrabackup --prepare)")
+	flag.BoolVar(&doCheck, "check", false, "Perform pre-flight validation checks (dependencies, MySQL compatibility, system resources, parameter recommendations)")
 	flag.StringVar(&downloadOutput, "output", "", "Output file path for download mode (use '-' for stdout, default: backup_YYYYMMDDHHMMSS.xb)")
 	flag.StringVar(&targetDir, "target-dir", "", "Directory for extraction (download mode) or backup directory (prepare mode)")
 	flag.StringVar(&estimatedSizeStr, "estimated-size", "", "Estimated backup size with unit (e.g., '100MB', '1GB', '500KB') or bytes (for progress tracking)")
 	flag.StringVar(&ioLimitStr, "io-limit", "", "IO bandwidth limit with unit (e.g., '100MB/s', '1GB/s', '500KB/s') or bytes per second. Use -1 for unlimited speed")
 	flag.StringVar(&useMemory, "use-memory", "", "Memory to use for prepare operation (e.g., '1G', '512M'). Default: 1G")
 	flag.StringVar(&xtrabackupPath, "xtrabackup-path", "", "Path to xtrabackup binary or directory containing xtrabackup/xbstream (overrides config and environment variable)")
+	flag.StringVar(&defaultsFile, "defaults-file", "", "Path to MySQL configuration file (my.cnf). If not specified, --defaults-file will not be passed to xtrabackup")
 	flag.StringVar(&existedBackup, "existed-backup", "", "Path to existing xtrabackup backup file to upload (use '-' for stdin)")
 	flag.BoolVar(&showVersion, "version", false, "Show version information")
 	flag.BoolVar(&showVersion, "v", false, "Show version information (shorthand)")
@@ -248,6 +252,11 @@ func main() {
 		}
 	}
 
+	// Handle --defaults-file flag (command-line flag overrides config)
+	if defaultsFile != "" {
+		cfg.DefaultsFile = defaultsFile
+	}
+
 	// Parse estimatedSize from command line or config
 	if estimatedSizeStr != "" {
 		parsedSize, err := utils.ParseSize(estimatedSizeStr)
@@ -287,8 +296,241 @@ func main() {
 		cfg.UseMemory = "1G"
 	}
 
-	// 4. Handle --prepare mode
+	// 4. Handle --check mode
+	if doCheck {
+		outputHeader()
+
+		// Determine effective compression type
+		effectiveCompressType := compressType
+		if effectiveCompressType == "__NOT_SET__" {
+			effectiveCompressType = cfg.CompressType
+		}
+		if effectiveCompressType == "no" {
+			effectiveCompressType = ""
+		}
+
+		// Get MySQL connection if available
+		var db *sql.DB
+		if host != "" && user != "" {
+			if password == "" {
+				i18n.Printf("Please input mysql-server password (optional, for MySQL compatibility checks): ")
+				pwd, _ := term.ReadPassword(0)
+				i18n.Printf("\n")
+				password = string(pwd)
+			}
+			if password != "" {
+				i18n.Printf("Connecting to MySQL server for compatibility checks...\n")
+				db = utils.GetConnection(host, port, user, password)
+				defer db.Close()
+			}
+		}
+
+		// Check if --check is combined with other modes
+		if doBackup {
+			// --check --backup: only check backup mode
+			i18n.Printf("[backup-helper] Running pre-flight checks for BACKUP mode...\n\n")
+			results := utils.CheckForBackupMode(cfg, effectiveCompressType, db)
+			utils.PrintCheckResults(i18n.Sprintf("Backup Mode Checks"), results)
+
+			hasCriticalError := false
+			for _, result := range results {
+				if result.Status == "ERROR" {
+					hasCriticalError = true
+					break
+				}
+			}
+
+			i18n.Printf("\n=== %s ===\n", i18n.Sprintf("Check Summary"))
+			if hasCriticalError {
+				i18n.Printf("[ERROR] Critical errors found. Please fix them before proceeding with backup.\n")
+				os.Exit(1)
+			} else {
+				i18n.Printf("[OK] Pre-flight checks completed. Backup mode is ready.\n")
+			}
+			return
+		} else if doDownload {
+			// --check --download: only check download mode
+			i18n.Printf("[backup-helper] Running pre-flight checks for DOWNLOAD mode...\n\n")
+			results := utils.CheckForDownloadMode(cfg, effectiveCompressType, targetDir)
+			utils.PrintCheckResults(i18n.Sprintf("Download Mode Checks"), results)
+
+			hasCriticalError := false
+			for _, result := range results {
+				if result.Status == "ERROR" {
+					hasCriticalError = true
+					break
+				}
+			}
+
+			i18n.Printf("\n=== %s ===\n", i18n.Sprintf("Check Summary"))
+			if hasCriticalError {
+				i18n.Printf("[ERROR] Critical errors found. Please fix them before proceeding with download.\n")
+				os.Exit(1)
+			} else {
+				i18n.Printf("[OK] Pre-flight checks completed. Download mode is ready.\n")
+			}
+			return
+		} else if doPrepare {
+			// --check --prepare: only check prepare mode
+			i18n.Printf("[backup-helper] Running pre-flight checks for PREPARE mode...\n\n")
+			results := utils.CheckForPrepareMode(cfg, targetDir, db)
+			utils.PrintCheckResults(i18n.Sprintf("Prepare Mode Checks"), results)
+
+			hasCriticalError := false
+			for _, result := range results {
+				if result.Status == "ERROR" {
+					hasCriticalError = true
+					break
+				}
+			}
+
+			i18n.Printf("\n=== %s ===\n", i18n.Sprintf("Check Summary"))
+			if hasCriticalError {
+				i18n.Printf("[ERROR] Critical errors found. Please fix them before proceeding with prepare.\n")
+				os.Exit(1)
+			} else {
+				i18n.Printf("[OK] Pre-flight checks completed. Prepare mode is ready.\n")
+			}
+			return
+		} else {
+			// Only --check: check all modes and show what would happen
+			i18n.Printf("[backup-helper] Running comprehensive pre-flight checks for all modes...\n\n")
+
+			// Check system resources (common to all modes)
+			resources := utils.CheckSystemResources()
+			systemResults := []utils.CheckResult{
+				{
+					Status:  "INFO",
+					Item:    "CPU cores",
+					Value:   fmt.Sprintf("%d", resources.CPUCores),
+					Message: "",
+				},
+			}
+			if resources.TotalMemory > 0 {
+				systemResults = append(systemResults, utils.CheckResult{
+					Status:  "INFO",
+					Item:    "Total memory",
+					Value:   formatBytes(resources.TotalMemory),
+					Message: "",
+				})
+			}
+			if resources.AvailableMemory > 0 {
+				systemResults = append(systemResults, utils.CheckResult{
+					Status:  "INFO",
+					Item:    "Available memory",
+					Value:   formatBytes(resources.AvailableMemory),
+					Message: "",
+				})
+			}
+			if resources.NetworkInfo != "" {
+				systemResults = append(systemResults, utils.CheckResult{
+					Status:  "INFO",
+					Item:    "Network interfaces",
+					Value:   resources.NetworkInfo,
+					Message: "",
+				})
+			}
+			utils.PrintCheckResults(i18n.Sprintf("System Resources"), systemResults)
+
+			// Check BACKUP mode
+			i18n.Printf("\n--- Checking BACKUP mode ---\n")
+			backupResults := utils.CheckForBackupMode(cfg, effectiveCompressType, db)
+			utils.PrintCheckResults(i18n.Sprintf("Backup Mode"), backupResults)
+
+			backupHasError := false
+			for _, result := range backupResults {
+				if result.Status == "ERROR" {
+					backupHasError = true
+					break
+				}
+			}
+			if backupHasError {
+				i18n.Printf("[WARNING] BACKUP mode has critical errors and cannot proceed.\n")
+			} else {
+				// Calculate MySQL data size for recommendations
+				var mysqlSize int64
+				if db != nil {
+					datadir, err := utils.GetDatadirFromMySQL(db)
+					if err == nil {
+						mysqlSize, _ = utils.CalculateBackupSize(datadir)
+					}
+				}
+				paramResults := utils.RecommendParameters(resources, mysqlSize, effectiveCompressType, cfg)
+				utils.PrintCheckResults(i18n.Sprintf("Recommended Parameters for Backup"), paramResults)
+				i18n.Printf("[OK] BACKUP mode is ready.\n")
+			}
+
+			// Check DOWNLOAD mode
+			i18n.Printf("\n--- Checking DOWNLOAD mode ---\n")
+			downloadResults := utils.CheckForDownloadMode(cfg, effectiveCompressType, targetDir)
+			utils.PrintCheckResults(i18n.Sprintf("Download Mode"), downloadResults)
+
+			downloadHasError := false
+			for _, result := range downloadResults {
+				if result.Status == "ERROR" {
+					downloadHasError = true
+					break
+				}
+			}
+			if downloadHasError {
+				i18n.Printf("[WARNING] DOWNLOAD mode has critical errors and cannot proceed.\n")
+			} else {
+				i18n.Printf("[OK] DOWNLOAD mode is ready.\n")
+			}
+
+			// Check PREPARE mode
+			i18n.Printf("\n--- Checking PREPARE mode ---\n")
+			prepareResults := utils.CheckForPrepareMode(cfg, targetDir, db)
+			utils.PrintCheckResults(i18n.Sprintf("Prepare Mode"), prepareResults)
+
+			prepareHasError := false
+			for _, result := range prepareResults {
+				if result.Status == "ERROR" {
+					prepareHasError = true
+					break
+				}
+			}
+			if prepareHasError {
+				i18n.Printf("[WARNING] PREPARE mode has critical errors and cannot proceed.\n")
+			} else {
+				i18n.Printf("[OK] PREPARE mode is ready.\n")
+			}
+
+			// Summary
+			i18n.Printf("\n=== %s ===\n", i18n.Sprintf("Check Summary"))
+			i18n.Printf("BACKUP mode:   %s\n", map[bool]string{true: "[ERROR] Cannot proceed", false: "[OK] Ready"}[backupHasError])
+			i18n.Printf("DOWNLOAD mode: %s\n", map[bool]string{true: "[ERROR] Cannot proceed", false: "[OK] Ready"}[downloadHasError])
+			i18n.Printf("PREPARE mode:  %s\n", map[bool]string{true: "[ERROR] Cannot proceed", false: "[OK] Ready"}[prepareHasError])
+			i18n.Printf("\nTo run a specific mode, use: --backup, --download, or --prepare\n")
+			i18n.Printf("To check a specific mode only, use: --check --backup, --check --download, or --check --prepare\n")
+		}
+		return
+	}
+
+	// 5. Handle --prepare mode
 	if doPrepare {
+		// Pre-check for prepare mode
+		var db *sql.DB
+		if host != "" && user != "" && password != "" {
+			db = utils.GetConnection(host, port, user, password)
+			defer db.Close()
+		} else if host != "" && user != "" {
+			// Password might be prompted later, but for now we can check without it
+		}
+
+		prepareResults := utils.CheckForPrepareMode(cfg, targetDir, db)
+		hasCriticalError := false
+		for _, result := range prepareResults {
+			if result.Status == "ERROR" {
+				hasCriticalError = true
+				i18n.Printf("[ERROR] %s: %s - %s\n", result.Item, result.Value, result.Message)
+			}
+		}
+		if hasCriticalError {
+			i18n.Printf("\n[ERROR] Pre-flight checks failed. Please fix the errors above before proceeding.\n")
+			os.Exit(1)
+		}
+
 		if targetDir == "" {
 			i18n.Printf("Error: --target-dir is required for --prepare mode\n")
 			os.Exit(1)
@@ -316,8 +558,8 @@ func main() {
 		logCtx.WriteLog("PREPARE", "Target directory: %s", targetDir)
 
 		// Try to get MySQL connection for defaults-file (optional, can be nil)
-		var db *sql.DB
-		if host != "" && user != "" {
+		// db may already be set from pre-check above
+		if db == nil && host != "" && user != "" {
 			if password == "" {
 				i18n.Printf("Please input mysql-server password (optional, for defaults-file): ")
 				pwd, _ := term.ReadPassword(0)
@@ -396,6 +638,28 @@ func main() {
 
 	// 5. Handle --download mode
 	if doDownload {
+		// Pre-check for download mode
+		downloadCompressType := compressType
+		if downloadCompressType == "__NOT_SET__" {
+			downloadCompressType = cfg.CompressType
+		}
+		if downloadCompressType == "no" {
+			downloadCompressType = ""
+		}
+
+		downloadResults := utils.CheckForDownloadMode(cfg, downloadCompressType, targetDir)
+		hasCriticalError := false
+		for _, result := range downloadResults {
+			if result.Status == "ERROR" {
+				hasCriticalError = true
+				i18n.Printf("[ERROR] %s: %s - %s\n", result.Item, result.Value, result.Message)
+			}
+		}
+		if hasCriticalError {
+			i18n.Printf("\n[ERROR] Pre-flight checks failed. Please fix the errors above before proceeding.\n")
+			os.Exit(1)
+		}
+
 		// Create log context
 		logCtx, err := utils.NewLogContext(cfg.LogDir)
 		if err != nil {
@@ -426,38 +690,7 @@ func main() {
 			streamKey = cfg.StreamKey
 		}
 
-		// Parse compression type for download mode
-		downloadCompressType := compressType
-		if downloadCompressType == "" && cfg.CompressType != "" {
-			downloadCompressType = cfg.CompressType
-		}
-		// Normalize: "no" or empty string means no compression
-		if downloadCompressType == "no" {
-			downloadCompressType = ""
-		}
-
-		// Check compression dependencies early (before starting transfer)
-		if downloadCompressType != "" {
-			if targetDir != "" {
-				// Extraction mode: check extraction dependencies
-				if err := utils.CheckExtractionDependencies(downloadCompressType, cfg); err != nil {
-					i18n.Printf("Error: %v\n", err)
-					os.Exit(1)
-				}
-			} else {
-				// Save mode: check compression dependencies (download mode, not backup mode)
-				if err := utils.CheckCompressionDependencies(downloadCompressType, false, cfg); err != nil {
-					i18n.Printf("Error: %v\n", err)
-					os.Exit(1)
-				}
-			}
-		} else if targetDir != "" {
-			// No compression but extraction requested: check xbstream dependency
-			if err := utils.CheckExtractionDependencies("", cfg); err != nil {
-				i18n.Printf("Error: %v\n", err)
-				os.Exit(1)
-			}
-		}
+		// downloadCompressType is already set in pre-check above
 
 		// Determine output file path
 		outputPath := downloadOutput
@@ -700,8 +933,17 @@ func main() {
 		return
 	}
 
-	// 5. If --backup, run backup/upload
+	// 6. If --backup, run backup/upload
 	if doBackup {
+		// Pre-check for backup mode
+		effectiveCompressType := compressType
+		if effectiveCompressType == "__NOT_SET__" {
+			effectiveCompressType = cfg.CompressType
+		}
+		if effectiveCompressType == "no" {
+			effectiveCompressType = ""
+		}
+
 		// MySQL param check (only needed for backup)
 		if password == "" {
 			i18n.Printf("Please input mysql-server password: ")
@@ -710,10 +952,34 @@ func main() {
 			password = string(pwd)
 		}
 
+		// Get MySQL connection for pre-check
+		var db *sql.DB
+		if host != "" && user != "" && password != "" {
+			db = utils.GetConnection(host, port, user, password)
+			defer db.Close()
+		}
+
+		// Run pre-flight checks
+		backupResults := utils.CheckForBackupMode(cfg, effectiveCompressType, db)
+		hasCriticalError := false
+		for _, result := range backupResults {
+			if result.Status == "ERROR" {
+				hasCriticalError = true
+				i18n.Printf("[ERROR] %s: %s - %s\n", result.Item, result.Value, result.Message)
+			}
+		}
+		if hasCriticalError {
+			i18n.Printf("\n[ERROR] Pre-flight checks failed. Please fix the errors above before proceeding.\n")
+			os.Exit(1)
+		}
+
 		i18n.Printf("connect to mysql-server host=%s port=%d user=%s\n", host, port, user)
 		outputHeader()
-		db := utils.GetConnection(host, port, user, password)
-		defer db.Close()
+		// db may already be set from pre-check above
+		if db == nil {
+			db = utils.GetConnection(host, port, user, password)
+			defer db.Close()
+		}
 		options := utils.CollectVariableFromMySQLServer(db)
 		utils.Check(options, cfg)
 
@@ -728,7 +994,7 @@ func main() {
 		}
 
 		// Check compression dependencies early (before starting backup)
-		effectiveCompressType := compressType
+		// effectiveCompressType is already set in pre-check above
 		if effectiveCompressType == "" && cfg.CompressType != "" {
 			effectiveCompressType = cfg.CompressType
 		}

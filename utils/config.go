@@ -35,6 +35,7 @@ type Config struct {
 	Parallel        int     `json:"parallel"`
 	UseMemory       string  `json:"useMemory"`
 	XtrabackupPath  string  `json:"xtrabackupPath"`
+	DefaultsFile    string  `json:"defaultsFile"`
 }
 
 func LoadConfig(path string) (*Config, error) {

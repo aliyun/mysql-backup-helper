@@ -79,9 +79,12 @@ func RunXtraBackup(cfg *Config, db *sql.DB, logCtx *LogContext) (io.Reader, *exe
 	}
 
 	// Check for MySQL config file first (must be first argument if present)
+	// Only use defaults-file if explicitly specified by user (via --defaults-file or config)
+	// We do NOT auto-detect to avoid using wrong config file (e.g., from another MySQL instance)
 	var defaultsFile string
-	if db != nil {
-		defaultsFile = GetMySQLConfigFile(db)
+	if cfg.DefaultsFile != "" {
+		// Use explicitly specified defaults-file
+		defaultsFile = cfg.DefaultsFile
 	}
 
 	args := []string{
@@ -235,9 +238,12 @@ func RunXtrabackupPrepare(cfg *Config, targetDir string, db *sql.DB, logCtx *Log
 	}
 
 	// Check for MySQL config file first (must be first argument if present)
+	// Only use defaults-file if explicitly specified by user (via --defaults-file or config)
+	// We do NOT auto-detect to avoid using wrong config file (e.g., from another MySQL instance)
 	var defaultsFile string
-	if db != nil {
-		defaultsFile = GetMySQLConfigFile(db)
+	if cfg.DefaultsFile != "" {
+		// Use explicitly specified defaults-file
+		defaultsFile = cfg.DefaultsFile
 	}
 
 	args := []string{

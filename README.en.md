@@ -78,7 +78,7 @@ A high-efficiency MySQL physical backup and OSS upload tool. Supports Percona Xt
 - All config fields can be overridden by command-line arguments. Command-line arguments take precedence over config.
 
 **Note**: The tool automatically handles the following xtrabackup options without user configuration:
-- `--defaults-file`: Automatically retrieved from MySQL connection (my.cnf path) and passed as the first argument to xtrabackup
+- `--defaults-file`: Can be manually specified via `--defaults-file` parameter for MySQL config file path (my.cnf). If not specified, no auto-detection is performed to avoid using wrong config files
 - `--close-files=1`: Automatically enabled to handle large number of tables
 - File descriptor limit: Automatically set to 655360 (via ulimit)
 
@@ -101,6 +101,7 @@ A high-efficiency MySQL physical backup and OSS upload tool. Supports Percona Xt
 | --user             | MySQL username (overrides config)                                |
 | --password         | MySQL password (overrides config, prompt if omitted)             |
 | --backup           | Run backup (otherwise only checks parameters)                    |
+| --check            | Pre-check mode: perform pre-flight validation. Can be used alone (check all modes) or combined with other modes (e.g., `--check --backup` checks backup mode only) |
 | --download         | Download mode: receive backup data from TCP stream and save      |
 | --prepare          | Prepare mode: execute xtrabackup --prepare to make backup ready for restore |
 | --output           | Output file path for download mode (use '-' for stdout, default: backup_YYYYMMDDHHMMSS.xb) |
@@ -223,25 +224,61 @@ If you have SSH access, you can use `--ssh` to automatically start the receiver 
 - Automatically cleans up remote process after transfer completes
 - Similar to `rsync -e ssh` usage - if SSH keys are configured, it just works
 
-### 6. Parameter check only (no backup)
+### 6. Pre-check Mode (--check)
+
+The `--check` mode can be used alone or combined with other modes:
+
+```sh
+# Use alone: check all modes (BACKUP, DOWNLOAD, PREPARE)
+./backup-helper --check
+
+# Check all modes (including MySQL compatibility checks)
+./backup-helper --check --host=127.0.0.1 --user=root --password=yourpass --port=3306
+
+# Check backup mode only (does not execute backup)
+./backup-helper --check --backup --host=127.0.0.1 --user=root --password=yourpass
+
+# Check download mode only (does not execute download)
+./backup-helper --check --download --target-dir=/path/to/extract
+
+# Check prepare mode only (does not execute prepare)
+./backup-helper --check --prepare --target-dir=/path/to/backup
+
+# Check with compression type specified
+./backup-helper --check --compress=zstd --host=127.0.0.1 --user=root --password=yourpass
+```
+
+**Check Contents:**
+- **Dependency Checks**: Verify if xtrabackup, xbstream, zstd, qpress tools are installed
+- **MySQL Compatibility Checks** (backup mode): MySQL version, xtrabackup version compatibility, data size estimation, replication parameters, config file validation
+- **System Resource Checks** (when using --check alone): CPU cores, memory size, network interfaces
+- **Parameter Recommendations** (backup mode): Recommend parallel, io-limit, use-memory parameters based on system resources
+- **Target Directory Checks** (download/prepare modes): Verify directory existence, writability, backup file presence, etc.
+
+**Important Notes:**
+- When using `--backup`, `--download`, or `--prepare`, the tool automatically performs pre-flight checks before execution
+- If pre-flight checks find critical issues (ERROR), the tool will stop and prompt you to fix them
+- When using `--check` combined with a mode (e.g., `--check --backup`), only checks are performed, no actual operations are executed
+
+### 7. Parameter check only (no backup)
 
 ```sh
 ./backup-helper --config config.json
 ```
 
-### 7. All command-line (no config.json)
+### 8. All command-line (no config.json)
 
 ```sh
 ./backup-helper --host=127.0.0.1 --user=root --password=123456 --port=3306 --backup --mode=oss --compress=qp
 ```
 
-### 8. Upload existing backup file to OSS
+### 9. Upload existing backup file to OSS
 
 ```sh
 ./backup-helper --config config.json --existed-backup backup.xb --mode=oss
 ```
 
-### 9. Stream existing backup file via TCP
+### 10. Stream existing backup file via TCP
 
 ```sh
 ./backup-helper --config config.json --existed-backup backup.xb --mode=stream --stream-port=9999
@@ -249,33 +286,33 @@ If you have SSH access, you can use `--ssh` to automatically start the receiver 
 nc 127.0.0.1 9999 > streamed-backup.xb
 ```
 
-### 10. Use cat command to read from stdin and upload to OSS
+### 11. Use cat command to read from stdin and upload to OSS
 
 ```sh
 cat backup.xb | ./backup-helper --config config.json --existed-backup - --mode=oss
 ```
 
-### 11. Use cat command to read from stdin and stream via TCP
+### 12. Use cat command to read from stdin and stream via TCP
 
 ```sh
 cat backup.xb | ./backup-helper --config config.json --existed-backup - --mode=stream --stream-port=9999
 ```
 
-### 12. Manually specify upload rate limit (e.g., limit to 100 MB/s)
+### 13. Manually specify upload rate limit (e.g., limit to 100 MB/s)
 
 ```sh
 ./backup-helper --config config.json --backup --mode=oss --io-limit 100MB/s
 # Supports units: KB/s, MB/s, GB/s, TB/s, or use bytes per second directly
 ```
 
-### 13. Disable rate limiting (unlimited upload speed)
+### 14. Disable rate limiting (unlimited upload speed)
 
 ```sh
 ./backup-helper --config config.json --backup --mode=oss --io-limit -1
 # Use -1 to completely disable rate limiting for maximum upload speed
 ```
 
-### 14. Specify estimated size for accurate progress display
+### 15. Specify estimated size for accurate progress display
 
 ```sh
 ./backup-helper --config config.json --backup --mode=oss --estimated-size 1GB

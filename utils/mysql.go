@@ -4,8 +4,6 @@ import (
 	"database/sql"
 	"fmt"
 	"log"
-	"os"
-	"path/filepath"
 
 	_ "github.com/go-sql-driver/mysql"
 )
@@ -50,60 +48,13 @@ func GetMySQLVariable(db *sql.DB, name string) string {
 	return ""
 }
 
-// GetMySQLConfigFile attempts to find MySQL configuration file (my.cnf)
-// Returns the path if found, empty string if not found
-// This function gracefully handles cases where MySQL variables cannot be queried
-// (e.g., insufficient permissions, remote connections, etc.)
+// GetMySQLConfigFile is deprecated and should not be used.
+// We no longer auto-detect MySQL config files to avoid using wrong config file
+// (e.g., from another MySQL instance on the same host).
+// Users must explicitly specify --defaults-file if they want to use a config file.
+// This function is kept for backward compatibility but always returns empty string.
 func GetMySQLConfigFile(db *sql.DB) string {
-	// Common MySQL config file locations (checked first, before querying MySQL)
-	commonPaths := []string{
-		"/etc/my.cnf",
-		"/etc/mysql/my.cnf",
-		"/usr/etc/my.cnf",
-		"/var/lib/mysql/my.cnf",
-		"~/.my.cnf",
-		"/etc/my.cnf.d/mysql-server.cnf",
-	}
-
-	// Try to get basedir from MySQL (gracefully handle query failures)
-	// If query fails (e.g., no permission), we continue with common paths only
-	if db != nil {
-		basedir := GetMySQLVariable(db, "basedir")
-		if basedir != "" {
-			commonPaths = append([]string{
-				filepath.Join(basedir, "my.cnf"),
-				filepath.Join(basedir, "my.ini"),
-				filepath.Join(basedir, "etc", "my.cnf"),
-			}, commonPaths...)
-		}
-
-		// Try to get datadir from MySQL (gracefully handle query failures)
-		datadir := GetMySQLVariable(db, "datadir")
-		if datadir != "" {
-			// Check parent directory of datadir
-			parentDir := filepath.Dir(datadir)
-			commonPaths = append([]string{
-				filepath.Join(parentDir, "my.cnf"),
-				filepath.Join(parentDir, "my.ini"),
-			}, commonPaths...)
-		}
-	}
-
-	// Check each path
-	for _, path := range commonPaths {
-		// Handle ~ expansion
-		if path[0] == '~' {
-			homeDir, err := os.UserHomeDir()
-			if err == nil {
-				path = filepath.Join(homeDir, path[1:])
-			}
-		}
-
-		// Check if file exists and is readable
-		if info, err := os.Stat(path); err == nil && !info.IsDir() {
-			return path
-		}
-	}
-
+	// Always return empty - no auto-detection
+	// Users must explicitly specify --defaults-file
 	return ""
 }
