@@ -334,15 +334,15 @@ cat backup.xb | ./backup-helper --config config.json --existed-backup - --mode=s
 # 使用配置文件
 ./backup-helper --config config.json --prepare --target-dir=/path/to/backup
 
-# 可选：提供 MySQL 连接信息以自动获取 --defaults-file
-./backup-helper --prepare --target-dir=/path/to/backup --host=127.0.0.1 --user=root --port=3306
+# 可选：提供 MySQL 连接信息和 --defaults-file
+./backup-helper --prepare --target-dir=/path/to/backup --host=127.0.0.1 --user=root --port=3306 --defaults-file=/etc/my.cnf
 ```
 
 **说明**：
 - `--target-dir`：必需，指定要准备的备份目录
 - `--parallel`：并行线程数，默认 4（可使用配置文件或在命令行指定）
 - `--use-memory`：准备操作使用的内存大小，默认 1G（支持单位：G, M, K）
-- `--host`, `--user`, `--port`：可选，如果提供则可以自动获取 `--defaults-file`
+- `--defaults-file`：可选，手动指定 MySQL 配置文件路径（如果不指定，不会自动检测）
 
 ### 16. 下载模式：从 TCP 流接收备份数据
 
