@@ -22,15 +22,27 @@ type LogContext struct {
 //   - Empty string: auto-generate backup-helper-{timestamp}.log
 //   - Relative path: will be joined with logDir
 //   - Absolute path: will be used as-is (logDir will be ignored for this file)
+//
+// If logFileName is an absolute path and logDir is also specified, logDir will be ignored
+// and a warning will be printed (if verbose logging is enabled)
 func NewLogContext(logDir string, logFileName string) (*LogContext, error) {
 	var finalLogFileName string
+	originalLogDir := logDir // Store original for conflict detection
 
 	if logFileName != "" {
 		// Custom log file name provided
 		if filepath.IsAbs(logFileName) {
 			// Absolute path: use as-is, extract dir for cleanup
 			finalLogFileName = logFileName
-			logDir = filepath.Dir(logFileName)
+			// Check if logDir was also specified and differs from the logFileName's directory
+			logFileNameDir := filepath.Dir(logFileName)
+			if originalLogDir != "" && originalLogDir != logFileNameDir {
+				// Conflict detected: logDir is specified but logFileName is absolute path
+				// logDir will be ignored, use logFileName's directory instead
+				fmt.Fprintf(os.Stderr, "[WARNING] logDir (%s) is specified but will be ignored because logFileName is an absolute path (%s). Using directory from logFileName: %s\n",
+					originalLogDir, logFileName, logFileNameDir)
+			}
+			logDir = logFileNameDir
 		} else {
 			// Relative path: join with logDir
 			if err := ensureLogsDir(logDir); err != nil {
