@@ -412,7 +412,7 @@ cat backup.xb | ./backup-helper --config config.json --existed-backup - --mode=s
 
 工具采用统一日志系统，将所有关键操作的日志记录到单个日志文件中：
 
-- **日志文件命名**：`backup-helper-{timestamp}.log`（如 `backup-helper-20251106105903.log`）
+- **日志文件命名**：默认自动生成 `backup-helper-{timestamp}.log`（如 `backup-helper-20251106105903.log`），可通过 `--log-file` 或配置文件中的 `logFileName` 自定义文件名（支持相对路径和绝对路径）
 - **日志存储位置**：默认在 `/var/log/mysql-backup-helper`，可通过 `--config` 或配置文件中的 `logDir` 指定（支持相对路径和绝对路径）
 - **日志内容**：统一记录所有操作步骤
   - **[BACKUP]**：xtrabackup 备份操作
