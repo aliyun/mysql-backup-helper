@@ -107,6 +107,7 @@
 | --output            | 下载模式输出文件路径（使用 '-' 表示输出到 stdout，默认：backup_YYYYMMDDHHMMSS.xb） |
 | --target-dir        | 目录：下载模式用于解包目录，准备模式用于备份目录             |
 | --mode              | 备份模式：`oss`（上传到 OSS）或 `stream`（推送到 TCP 端口，默认）  |
+| --log-file          | 自定义日志文件名（相对于 logDir 或绝对路径）。如不指定，自动生成 `backup-helper-{timestamp}.log` |
 | --stream-port       | 流式推送时监听的本地端口（如 9999，设为 0 则自动查找空闲端口），或指定远程端口（当使用 --stream-host 时） |
 | --stream-host       | 远程主机 IP（如 '192.168.1.100'）。指定后主动连接到远程服务器推送数据，类似 `nc host port` |
 | --ssh               | 使用 SSH 在远程主机自动启动接收服务（需要 --stream-host，依赖系统 SSH 配置） |
