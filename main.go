@@ -134,6 +134,7 @@ func main() {
 	var autoYes bool
 	var xtrabackupPath string
 	var defaultsFile string
+	var logFileName string
 
 	flag.BoolVar(&doBackup, "backup", false, "Run xtrabackup and upload to OSS")
 	flag.BoolVar(&autoYes, "y", false, "Automatically answer 'yes' to all prompts (non-interactive mode)")
@@ -167,6 +168,7 @@ func main() {
 	flag.BoolVar(&useSSH, "ssh", false, "Use SSH to start receiver on remote host (requires --stream-host)")
 	flag.StringVar(&remoteOutput, "remote-output", "", "Remote output path when using SSH mode (default: auto-generated)")
 	flag.IntVar(&parallel, "parallel", 0, "Number of parallel threads for xtrabackup (default: 4)")
+	flag.StringVar(&logFileName, "log-file", "", "Custom log file name (relative to logDir or absolute path). If not specified, auto-generates backup-helper-{timestamp}.log")
 
 	flag.Parse()
 
@@ -255,6 +257,11 @@ func main() {
 	// Handle --defaults-file flag (command-line flag overrides config)
 	if defaultsFile != "" {
 		cfg.DefaultsFile = defaultsFile
+	}
+
+	// Handle --log-file flag (command-line flag overrides config)
+	if logFileName != "" {
+		cfg.LogFileName = logFileName
 	}
 
 	// Parse estimatedSize from command line or config
@@ -543,7 +550,7 @@ func main() {
 		}
 
 		// Create log context
-		logCtx, err := utils.NewLogContext(cfg.LogDir)
+		logCtx, err := utils.NewLogContext(cfg.LogDir, cfg.LogFileName)
 		if err != nil {
 			i18n.Printf("Failed to create log context: %v\n", err)
 			os.Exit(1)
@@ -661,7 +668,7 @@ func main() {
 		}
 
 		// Create log context
-		logCtx, err := utils.NewLogContext(cfg.LogDir)
+		logCtx, err := utils.NewLogContext(cfg.LogDir, cfg.LogFileName)
 		if err != nil {
 			i18n.Printf("Failed to create log context: %v\n", err)
 			os.Exit(1)
@@ -1050,7 +1057,7 @@ func main() {
 		utils.CheckXtraBackupVersion(mysqlVer, cfg)
 
 		// Create log context
-		logCtx, err := utils.NewLogContext(cfg.LogDir)
+		logCtx, err := utils.NewLogContext(cfg.LogDir, cfg.LogFileName)
 		if err != nil {
 			i18n.Printf("Failed to create log context: %v\n", err)
 			os.Exit(1)
@@ -1332,7 +1339,7 @@ func main() {
 		return
 	} else if existedBackup != "" {
 		// Create log context for existed backup
-		logCtx, err := utils.NewLogContext(cfg.LogDir)
+		logCtx, err := utils.NewLogContext(cfg.LogDir, cfg.LogFileName)
 		if err != nil {
 			i18n.Printf("Failed to create log context: %v\n", err)
 			os.Exit(1)

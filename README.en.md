@@ -107,6 +107,7 @@ A high-efficiency MySQL physical backup and OSS upload tool. Supports Percona Xt
 | --output           | Output file path for download mode (use '-' for stdout, default: backup_YYYYMMDDHHMMSS.xb) |
 | --target-dir       | Directory: extraction directory for download mode, backup directory for prepare mode |
 | --mode             | Backup mode: `oss` (upload to OSS) or `stream` (push to TCP, default)     |
+| --log-file         | Custom log file name (relative to logDir or absolute path). If not specified, auto-generates `backup-helper-{timestamp}.log` |
 | --stream-port      | Local port for streaming mode (e.g. 9999, 0 = auto-find available port), or remote port when --stream-host is specified |
 | --stream-host      | Remote host IP (e.g., '192.168.1.100'). When specified, actively connects to remote server to push data, similar to `nc host port` |
 | --ssh              | Use SSH to automatically start receiver on remote host (requires --stream-host, relies on system SSH config) |
@@ -412,7 +413,7 @@ After backup is complete, execute prepare to make the backup ready for restore:
 
 The tool uses a unified logging system that records all critical operations into a single log file:
 
-- **Log File Naming**: `backup-helper-{timestamp}.log` (e.g., `backup-helper-20251106105903.log`)
+- **Log File Naming**: Defaults to auto-generated `backup-helper-{timestamp}.log` (e.g., `backup-helper-20251106105903.log`), can be customized via `--log-file` or `logFileName` in config file (supports both relative and absolute paths)
 - **Log Storage Location**: Defaults to `/var/log/mysql-backup-helper`, can be specified via `--config` or `logDir` in config file (supports both relative and absolute paths)
 - **Log Content**: Unified recording of all operation steps
   - **[BACKUP]**: xtrabackup backup operations

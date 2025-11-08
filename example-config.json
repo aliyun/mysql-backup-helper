@@ -25,6 +25,7 @@
   "streamKey": "your-secret-key",
   "existedBackup": "",
   "logDir": "/var/log/mysql-backup-helper",
+  "logFileName": "",
   "estimatedSize": 0,
   "ioLimit": 0,
   "downloadOutput": "",

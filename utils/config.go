@@ -28,6 +28,7 @@ type Config struct {
 	StreamKey       string  `json:"streamKey"`
 	ExistedBackup   string  `json:"existedBackup"`
 	LogDir          string  `json:"logDir"`
+	LogFileName     string  `json:"logFileName"`
 	EstimatedSize   int64   `json:"estimatedSize"`
 	IOLimit         int64   `json:"ioLimit"`
 	DownloadOutput  string  `json:"downloadOutput"`

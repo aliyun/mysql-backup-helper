@@ -17,23 +17,49 @@ type LogContext struct {
 }
 
 // NewLogContext creates a new log context with backup-helper-{timestamp}.log
-func NewLogContext(logDir string) (*LogContext, error) {
-	if err := ensureLogsDir(logDir); err != nil {
-		return nil, err
+// If logFileName is provided, it will be used instead of auto-generated name
+// logFileName can be:
+//   - Empty string: auto-generate backup-helper-{timestamp}.log
+//   - Relative path: will be joined with logDir
+//   - Absolute path: will be used as-is (logDir will be ignored for this file)
+func NewLogContext(logDir string, logFileName string) (*LogContext, error) {
+	var finalLogFileName string
+
+	if logFileName != "" {
+		// Custom log file name provided
+		if filepath.IsAbs(logFileName) {
+			// Absolute path: use as-is, extract dir for cleanup
+			finalLogFileName = logFileName
+			logDir = filepath.Dir(logFileName)
+		} else {
+			// Relative path: join with logDir
+			if err := ensureLogsDir(logDir); err != nil {
+				return nil, err
+			}
+			finalLogFileName = filepath.Join(logDir, logFileName)
+		}
+		// Ensure directory exists for custom file
+		if err := ensureLogsDir(filepath.Dir(finalLogFileName)); err != nil {
+			return nil, err
+		}
+	} else {
+		// Auto-generate log file name
+		if err := ensureLogsDir(logDir); err != nil {
+			return nil, err
+		}
+		cleanOldLogs(logDir, 10)
+		timestamp := time.Now().Format("20060102150405")
+		finalLogFileName = filepath.Join(logDir, fmt.Sprintf("backup-helper-%s.log", timestamp))
 	}
-	cleanOldLogs(logDir, 10)
 
-	timestamp := time.Now().Format("20060102150405")
-	logFileName := filepath.Join(logDir, fmt.Sprintf("backup-helper-%s.log", timestamp))
-
-	logFile, err := os.Create(logFileName)
+	logFile, err := os.Create(finalLogFileName)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create log file: %v", err)
 	}
 
 	ctx := &LogContext{
 		logFile:     logFile,
-		logFileName: logFileName,
+		logFileName: finalLogFileName,
 		logDir:      logDir,
 	}
 
