@@ -14,6 +14,7 @@ type LogContext struct {
 	logFile     *os.File
 	logFileName string
 	logDir      string
+	completedOK bool // Flag to mark if operation completed successfully
 }
 
 // NewLogContext creates a new log context with backup-helper-{timestamp}.log
@@ -73,6 +74,7 @@ func NewLogContext(logDir string, logFileName string) (*LogContext, error) {
 		logFile:     logFile,
 		logFileName: finalLogFileName,
 		logDir:      logDir,
+		completedOK: false, // Default to false, will be set to true on successful completion
 	}
 
 	// Write initial header
@@ -120,10 +122,20 @@ func (lc *LogContext) GetFileName() string {
 	return lc.logFileName
 }
 
+// MarkSuccess marks the operation as successfully completed
+// This will cause "completed OK!" to be written to the log before "Log Ended"
+func (lc *LogContext) MarkSuccess() {
+	lc.completedOK = true
+}
+
 // Close closes the log file
+// If MarkSuccess() was called, it will write "completed OK!" before "Log Ended"
 func (lc *LogContext) Close() {
 	if lc.logFile != nil {
 		timestamp := time.Now().Format("2006-01-02 15:04:05")
+		if lc.completedOK {
+			lc.logFile.WriteString(fmt.Sprintf("[%s] [SYSTEM] completed OK!\n", timestamp))
+		}
 		lc.logFile.WriteString(fmt.Sprintf("[%s] [SYSTEM] === MySQL Backup Helper Log Ended ===\n", timestamp))
 		lc.logFile.Close()
 		lc.logFile = nil

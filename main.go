@@ -637,6 +637,7 @@ func main() {
 		}
 
 		logCtx.WriteLog("PREPARE", "Prepare completed successfully")
+		logCtx.MarkSuccess()
 		i18n.Printf("[backup-helper] Prepare completed successfully!\n")
 		i18n.Printf("[backup-helper] Backup is ready for restore in: %s\n", targetDir)
 		i18n.Printf("[backup-helper] Log file: %s\n", logCtx.GetFileName())
@@ -897,6 +898,7 @@ func main() {
 			}
 			i18n.Printf("[backup-helper] Extraction completed to: %s\n", targetDir)
 			logCtx.WriteLog("DOWNLOAD", "Extraction completed successfully")
+			logCtx.MarkSuccess()
 			i18n.Printf("[backup-helper] Log file: %s\n", logCtx.GetFileName())
 		} else if outputPath == "-" {
 			// Stream to stdout - set tracker to output progress to stderr
@@ -971,6 +973,7 @@ func main() {
 			// Progress tracker will display completion message via closer()
 			i18n.Printf("[backup-helper] Download completed! Saved to: %s\n", outputPath)
 			logCtx.WriteLog("DOWNLOAD", "Download completed successfully")
+			logCtx.MarkSuccess()
 			i18n.Printf("[backup-helper] Log file: %s\n", logCtx.GetFileName())
 		}
 		return
@@ -1138,6 +1141,7 @@ func main() {
 				os.Exit(1)
 			}
 			logCtx.WriteLog("OSS", "OSS upload completed successfully")
+			logCtx.MarkSuccess()
 		case "stream":
 			// Parse stream-host from command line or config
 			if streamHost == "" && cfg.StreamHost != "" {
@@ -1334,6 +1338,7 @@ func main() {
 		// Ensure a newline before completion message (in case progress tracker didn't clear properly)
 		fmt.Print("\n")
 		logCtx.WriteLog("BACKUP", "Backup completed successfully")
+		logCtx.MarkSuccess()
 		i18n.Printf("[backup-helper] Backup and upload completed!\n")
 		i18n.Printf("[backup-helper] Log file: %s\n", logCtx.GetFileName())
 		return
@@ -1461,6 +1466,7 @@ func main() {
 				os.Exit(1)
 			}
 			i18n.Printf("[backup-helper] OSS upload completed!\n")
+			logCtx.MarkSuccess()
 		case "stream":
 			// Parse stream-host from command line or config
 			if streamHost == "" && cfg.StreamHost != "" {
@@ -1551,6 +1557,7 @@ func main() {
 			}
 
 			i18n.Printf("[backup-helper] Stream completed!\n")
+			logCtx.MarkSuccess()
 		default:
 			i18n.Printf("Unknown mode: %s\n", mode)
 			os.Exit(1)
