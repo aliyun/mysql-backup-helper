@@ -114,7 +114,7 @@ A high-efficiency MySQL physical backup and OSS upload tool. Supports Percona Xt
 | --remote-output    | Remote output path for SSH mode (default: auto-generated) |
 | --compress    | Compression: `qp` (qpress), `zstd`, or `no` (no compression). Defaults to qp when no value provided. Supported in all modes (oss, stream) |
 | --lang             | Language: `zh` (Chinese) or `en` (English), auto-detect if unset |
-| --ai-diagnose=on/off| AI diagnosis on operation failure. 'on' runs automatically (requires Qwen API Key in config), 'off' skips, unset will prompt interactively. Supports all modules (BACKUP, PREPARE, TCP, OSS, EXTRACT, etc.). |
+| --ai-diagnose=on/off| AI diagnosis on operation failure. 'on' prompts user whether to run diagnosis (use with -y to skip prompt and run directly), 'off' skips, unset defaults to 'off' (no diagnosis). Supports all modules (BACKUP, PREPARE, TCP, OSS, EXTRACT, etc.). |
 | --enable-handshake   | Enable handshake for TCP streaming (default: false, can be set in config) |
 | --stream-key         | Handshake key for TCP streaming (default: empty, can be set in config)    |
 | --existed-backup     | Path to existing xtrabackup backup file to upload or stream (use '-' for stdin) |

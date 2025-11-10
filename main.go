@@ -607,22 +607,12 @@ func main() {
 			// Prompt for AI diagnosis
 			switch aiDiagnoseFlag {
 			case "on":
-				if cfg.QwenAPIKey == "" {
-					i18n.Printf("Qwen API Key is required for AI diagnosis. Please set it in config.\n")
-					os.Exit(1)
-				}
-				logContent, _ := os.ReadFile(logCtx.GetFileName())
-				aiSuggestion, err := utils.DiagnoseWithAliQwen(cfg, "PREPARE", string(logContent))
-				if err != nil {
-					i18n.Printf("AI diagnosis failed: %v\n", err)
-				} else {
-					fmt.Print(color.YellowString(i18n.Sprintf("AI diagnosis suggestion:\n")))
-					fmt.Println(color.YellowString(aiSuggestion))
-				}
-			case "off":
-				// do nothing
-			default:
+				// When --ai-diagnose=on, ask user (unless -y is set)
 				if promptAIDiagnosis(autoYes) {
+					if cfg.QwenAPIKey == "" {
+						i18n.Printf("Qwen API Key is required for AI diagnosis. Please set it in config.\n")
+						os.Exit(1)
+					}
 					logContent, _ := os.ReadFile(logCtx.GetFileName())
 					aiSuggestion, err := utils.DiagnoseWithAliQwen(cfg, "PREPARE", string(logContent))
 					if err != nil {
@@ -632,6 +622,11 @@ func main() {
 						fmt.Println(color.YellowString(aiSuggestion))
 					}
 				}
+			case "off":
+				// do nothing, skip ai diagnose
+			default:
+				// Default: off (skip AI diagnosis to avoid interrupting user workflow)
+				// do nothing
 			}
 			os.Exit(1)
 		}
@@ -868,22 +863,12 @@ func main() {
 				// Prompt for AI diagnosis
 				switch aiDiagnoseFlag {
 				case "on":
-					if cfg.QwenAPIKey == "" {
-						i18n.Printf("Qwen API Key is required for AI diagnosis. Please set it in config.\n")
-						os.Exit(1)
-					}
-					logContent, _ := os.ReadFile(logCtx.GetFileName())
-					aiSuggestion, err := utils.DiagnoseWithAliQwen(cfg, "EXTRACT", string(logContent))
-					if err != nil {
-						i18n.Printf("AI diagnosis failed: %v\n", err)
-					} else {
-						fmt.Print(color.YellowString(i18n.Sprintf("AI diagnosis suggestion:\n")))
-						fmt.Println(color.YellowString(aiSuggestion))
-					}
-				case "off":
-					// do nothing
-				default:
+					// When --ai-diagnose=on, ask user (unless -y is set)
 					if promptAIDiagnosis(autoYes) {
+						if cfg.QwenAPIKey == "" {
+							i18n.Printf("Qwen API Key is required for AI diagnosis. Please set it in config.\n")
+							os.Exit(1)
+						}
 						logContent, _ := os.ReadFile(logCtx.GetFileName())
 						aiSuggestion, err := utils.DiagnoseWithAliQwen(cfg, "EXTRACT", string(logContent))
 						if err != nil {
@@ -893,6 +878,11 @@ func main() {
 							fmt.Println(color.YellowString(aiSuggestion))
 						}
 					}
+				case "off":
+					// do nothing, skip ai diagnose
+				default:
+					// Default: off (skip AI diagnosis to avoid interrupting user workflow)
+					// do nothing
 				}
 				os.Exit(1)
 			}
@@ -1309,21 +1299,12 @@ func main() {
 
 			switch aiDiagnoseFlag {
 			case "on":
-				if cfg.QwenAPIKey == "" {
-					i18n.Printf("Qwen API Key is required for AI diagnosis. Please set it in config.\n")
-					os.Exit(1)
-				}
-				aiSuggestion, err := utils.DiagnoseWithAliQwen(cfg, "BACKUP", string(logContent))
-				if err != nil {
-					i18n.Printf("AI diagnosis failed: %v\n", err)
-				} else {
-					fmt.Print(color.YellowString(i18n.Sprintf("AI diagnosis suggestion:\n")))
-					fmt.Println(color.YellowString(aiSuggestion))
-				}
-			case "off":
-				// do nothing, skip ai diagnose
-			default:
+				// When --ai-diagnose=on, ask user (unless -y is set)
 				if promptAIDiagnosis(autoYes) {
+					if cfg.QwenAPIKey == "" {
+						i18n.Printf("Qwen API Key is required for AI diagnosis. Please set it in config.\n")
+						os.Exit(1)
+					}
 					aiSuggestion, err := utils.DiagnoseWithAliQwen(cfg, "BACKUP", string(logContent))
 					if err != nil {
 						i18n.Printf("AI diagnosis failed: %v\n", err)
@@ -1332,6 +1313,11 @@ func main() {
 						fmt.Println(color.YellowString(aiSuggestion))
 					}
 				}
+			case "off":
+				// do nothing, skip ai diagnose
+			default:
+				// Default: off (skip AI diagnosis to avoid interrupting user workflow)
+				// do nothing
 			}
 			os.Exit(1)
 		}
