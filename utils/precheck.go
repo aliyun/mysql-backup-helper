@@ -597,8 +597,8 @@ func CheckTCPPortListenability(port int) []CheckResult {
 	}
 
 	// Port can be listened on, now wait for a connection with timeout
-	// Set a timeout for accepting connections (5 seconds)
-	timeout := 5 * time.Second
+	// Set a timeout for accepting connections (10 seconds)
+	timeout := 10 * time.Second
 	ln.(*net.TCPListener).SetDeadline(time.Now().Add(timeout))
 
 	i18n.Printf("Checking port %d: listening and waiting for connection (timeout: %v)...\n", port, timeout)
@@ -648,7 +648,7 @@ func CheckTCPConnectivity(host string, port int) []CheckResult {
 	}
 
 	addr := net.JoinHostPort(host, strconv.Itoa(port))
-	timeout := 5 * time.Second
+	timeout := 10 * time.Second
 
 	i18n.Printf("Checking connectivity to %s (timeout: %v)...\n", addr, timeout)
 	conn, err := net.DialTimeout("tcp", addr, timeout)
