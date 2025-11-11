@@ -11,6 +11,7 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/fatih/color"
 	"github.com/gioco-play/easy-i18n/i18n"
@@ -374,7 +375,7 @@ func CheckMySQLCompatibility(db *sql.DB, cfg *Config) []CheckResult {
 }
 
 // CheckForBackupMode performs checks specific to backup mode
-func CheckForBackupMode(cfg *Config, compressType string, db *sql.DB) []CheckResult {
+func CheckForBackupMode(cfg *Config, compressType string, db *sql.DB, streamHost string, streamPort int) []CheckResult {
 	var results []CheckResult
 
 	// Check dependencies (xtrabackup, xbstream, compression tools)
@@ -395,11 +396,24 @@ func CheckForBackupMode(cfg *Config, compressType string, db *sql.DB) []CheckRes
 		results = append(results, mysqlResults...)
 	}
 
+	// Check TCP connectivity if stream-port or stream-host+stream-port is specified
+	if streamPort > 0 {
+		if streamHost != "" {
+			// Check remote connectivity
+			connectivityResults := CheckTCPConnectivity(streamHost, streamPort)
+			results = append(results, connectivityResults...)
+		} else {
+			// Check local port listenability
+			listenResults := CheckTCPPortListenability(streamPort)
+			results = append(results, listenResults...)
+		}
+	}
+
 	return results
 }
 
 // CheckForDownloadMode performs checks specific to download mode
-func CheckForDownloadMode(cfg *Config, compressType string, targetDir string) []CheckResult {
+func CheckForDownloadMode(cfg *Config, compressType string, targetDir string, streamHost string, streamPort int) []CheckResult {
 	var results []CheckResult
 
 	// Check compression/extraction dependencies if needed
@@ -543,6 +557,119 @@ func CheckForDownloadMode(cfg *Config, compressType string, targetDir string) []
 			}
 		}
 	}
+
+	// Check TCP connectivity if stream-port or stream-host+stream-port is specified
+	if streamPort > 0 {
+		if streamHost != "" {
+			// Check remote connectivity
+			connectivityResults := CheckTCPConnectivity(streamHost, streamPort)
+			results = append(results, connectivityResults...)
+		} else {
+			// Check local port listenability
+			listenResults := CheckTCPPortListenability(streamPort)
+			results = append(results, listenResults...)
+		}
+	}
+
+	return results
+}
+
+// CheckTCPPortListenability checks if a local port can be listened on and waits for a connection with timeout
+// This is used for --check mode to verify port availability
+func CheckTCPPortListenability(port int) []CheckResult {
+	var results []CheckResult
+
+	if port <= 0 {
+		return results
+	}
+
+	// Try to listen on the port
+	addr := fmt.Sprintf(":%d", port)
+	ln, err := net.Listen("tcp", addr)
+	if err != nil {
+		results = append(results, CheckResult{
+			Status:  "ERROR",
+			Item:    "TCP port listenability",
+			Value:   fmt.Sprintf("port %d", port),
+			Message: fmt.Sprintf("Cannot listen on port %d: %v. Port may be in use or not accessible.", port, err),
+		})
+		return results
+	}
+
+	// Port can be listened on, now wait for a connection with timeout
+	// Set a timeout for accepting connections (5 seconds)
+	timeout := 5 * time.Second
+	ln.(*net.TCPListener).SetDeadline(time.Now().Add(timeout))
+
+	i18n.Printf("Checking port %d: listening and waiting for connection (timeout: %v)...\n", port, timeout)
+	conn, err := ln.Accept()
+	ln.Close() // Close listener immediately after accepting or timeout
+
+	if err != nil {
+		// Check if it's a timeout error
+		if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
+			// Timeout is expected in check mode - port is available but no connection received
+			results = append(results, CheckResult{
+				Status:  "OK",
+				Item:    "TCP port listenability",
+				Value:   fmt.Sprintf("port %d", port),
+				Message: fmt.Sprintf("Port %d is available and can be listened on. No connection received within timeout (expected in check mode).", port),
+			})
+		} else {
+			// Other error
+			results = append(results, CheckResult{
+				Status:  "WARNING",
+				Item:    "TCP port listenability",
+				Value:   fmt.Sprintf("port %d", port),
+				Message: fmt.Sprintf("Port %d can be listened on, but error accepting connection: %v", port, err),
+			})
+		}
+	} else {
+		// Connection received - close it immediately
+		conn.Close()
+		results = append(results, CheckResult{
+			Status:  "OK",
+			Item:    "TCP port listenability",
+			Value:   fmt.Sprintf("port %d", port),
+			Message: fmt.Sprintf("Port %d is available and connection test successful.", port),
+		})
+	}
+
+	return results
+}
+
+// CheckTCPConnectivity checks if a remote host:port is reachable
+// This is used for --check mode to verify remote connectivity
+func CheckTCPConnectivity(host string, port int) []CheckResult {
+	var results []CheckResult
+
+	if host == "" || port <= 0 {
+		return results
+	}
+
+	addr := net.JoinHostPort(host, strconv.Itoa(port))
+	timeout := 5 * time.Second
+
+	i18n.Printf("Checking connectivity to %s (timeout: %v)...\n", addr, timeout)
+	conn, err := net.DialTimeout("tcp", addr, timeout)
+	if err != nil {
+		results = append(results, CheckResult{
+			Status:  "ERROR",
+			Item:    "TCP connectivity",
+			Value:   addr,
+			Message: fmt.Sprintf("Cannot connect to %s: %v. Check network connectivity, firewall rules, and that the remote service is running.", addr, err),
+		})
+		return results
+	}
+
+	// Connection successful - close it immediately
+	conn.Close()
+	results = append(results, CheckResult{
+		Status:  "OK",
+		Item:    "TCP connectivity",
+		Value:   addr,
+		Message: fmt.Sprintf("Successfully connected to %s.", addr),
+	})
 
 	return results
 }

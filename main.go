@@ -316,6 +316,20 @@ func main() {
 			effectiveCompressType = ""
 		}
 
+		// Parse stream-host and stream-port for connectivity checks
+		var checkStreamHost string
+		var checkStreamPort int
+		if streamHost != "" {
+			checkStreamHost = streamHost
+		} else if cfg.StreamHost != "" {
+			checkStreamHost = cfg.StreamHost
+		}
+		if streamPort > 0 {
+			checkStreamPort = streamPort
+		} else if !isFlagPassed("stream-port") && cfg.StreamPort > 0 {
+			checkStreamPort = cfg.StreamPort
+		}
+
 		// Get MySQL connection if available
 		var db *sql.DB
 		if host != "" && user != "" {
@@ -336,7 +350,7 @@ func main() {
 		if doBackup {
 			// --check --backup: only check backup mode
 			i18n.Printf("[backup-helper] Running pre-flight checks for BACKUP mode...\n\n")
-			results := utils.CheckForBackupMode(cfg, effectiveCompressType, db)
+			results := utils.CheckForBackupMode(cfg, effectiveCompressType, db, checkStreamHost, checkStreamPort)
 			utils.PrintCheckResults(i18n.Sprintf("Backup Mode Checks"), results)
 
 			hasCriticalError := false
@@ -358,7 +372,7 @@ func main() {
 		} else if doDownload {
 			// --check --download: only check download mode
 			i18n.Printf("[backup-helper] Running pre-flight checks for DOWNLOAD mode...\n\n")
-			results := utils.CheckForDownloadMode(cfg, effectiveCompressType, targetDir)
+			results := utils.CheckForDownloadMode(cfg, effectiveCompressType, targetDir, checkStreamHost, checkStreamPort)
 			utils.PrintCheckResults(i18n.Sprintf("Download Mode Checks"), results)
 
 			hasCriticalError := false
@@ -441,7 +455,9 @@ func main() {
 
 			// Check BACKUP mode
 			i18n.Printf("\n--- Checking BACKUP mode ---\n")
-			backupResults := utils.CheckForBackupMode(cfg, effectiveCompressType, db)
+			// Note: In standalone --check mode, we don't check TCP connectivity
+			// TCP connectivity is only checked when --check is combined with --backup or --download
+			backupResults := utils.CheckForBackupMode(cfg, effectiveCompressType, db, "", 0)
 			utils.PrintCheckResults(i18n.Sprintf("Backup Mode"), backupResults)
 
 			backupHasError := false
@@ -469,7 +485,9 @@ func main() {
 
 			// Check DOWNLOAD mode
 			i18n.Printf("\n--- Checking DOWNLOAD mode ---\n")
-			downloadResults := utils.CheckForDownloadMode(cfg, effectiveCompressType, targetDir)
+			// Note: In standalone --check mode, we don't check TCP connectivity
+			// TCP connectivity is only checked when --check is combined with --backup or --download
+			downloadResults := utils.CheckForDownloadMode(cfg, effectiveCompressType, targetDir, "", 0)
 			utils.PrintCheckResults(i18n.Sprintf("Download Mode"), downloadResults)
 
 			downloadHasError := false
@@ -650,7 +668,8 @@ func main() {
 			downloadCompressType = ""
 		}
 
-		downloadResults := utils.CheckForDownloadMode(cfg, downloadCompressType, targetDir)
+		// Note: In non-check mode, we don't check TCP connectivity to avoid blocking
+		downloadResults := utils.CheckForDownloadMode(cfg, downloadCompressType, targetDir, "", 0)
 		hasCriticalError := false
 		for _, result := range downloadResults {
 			if result.Status == "ERROR" {
@@ -996,7 +1015,8 @@ func main() {
 		}
 
 		// Run pre-flight checks
-		backupResults := utils.CheckForBackupMode(cfg, effectiveCompressType, db)
+		// Note: In non-check mode, we don't check TCP connectivity to avoid blocking
+		backupResults := utils.CheckForBackupMode(cfg, effectiveCompressType, db, "", 0)
 		hasCriticalError := false
 		for _, result := range backupResults {
 			if result.Status == "ERROR" {
