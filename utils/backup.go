@@ -94,6 +94,7 @@ func RunXtraBackup(cfg *Config, db *sql.DB, logCtx *LogContext) (io.Reader, *exe
 		fmt.Sprintf("--user=%s", cfg.MysqlUser),
 		fmt.Sprintf("--password=%s", cfg.MysqlPassword),
 		"--stream=xbstream",
+		"--slave-info", // Record master binary log position for replication setup
 		"--backup-lock-timeout=120",
 		"--backup-lock-retry-count=0",
 		"--close-files=1", // Enable close-files to handle large number of tables
