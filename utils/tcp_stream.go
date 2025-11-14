@@ -41,8 +41,9 @@ func GetLocalIP() (string, error) {
 // StartStreamSender starts a TCP server on the given port for sending data.
 // It accepts connections and returns a WriteCloser for writing data to the remote client.
 // If port is 0, it will automatically find an available port.
+// timeoutSeconds: connection timeout in seconds (0 means use default 60s, max 3600s)
 // Returns the actual listening port and local IP for display.
-func StartStreamSender(port int, enableHandshake bool, handshakeKey string, totalSize int64, isCompressed bool, logCtx *LogContext) (io.WriteCloser, *ProgressTracker, func(), int, string, error) {
+func StartStreamSender(port int, enableHandshake bool, handshakeKey string, totalSize int64, isCompressed bool, timeoutSeconds int, logCtx *LogContext) (io.WriteCloser, *ProgressTracker, func(), int, string, error) {
 	var addr string
 	var actualPort int
 
@@ -77,11 +78,21 @@ func StartStreamSender(port int, enableHandshake bool, handshakeKey string, tota
 	}
 
 	fmt.Printf("[backup-helper] Listening on %s:%d\n", localIP, actualPort)
-	fmt.Printf("[backup-helper] Waiting for remote connection...\n")
+	fmt.Printf("[backup-helper] Waiting for remote connection (timeout: %ds)...\n", timeoutSeconds)
 	if logCtx != nil {
 		logCtx.WriteLog("TCP", "Listening on %s:%d", localIP, actualPort)
-		logCtx.WriteLog("TCP", "Waiting for remote connection...")
+		logCtx.WriteLog("TCP", "Waiting for remote connection (timeout: %ds)", timeoutSeconds)
 	}
+
+	// Set timeout for accepting connections
+	if timeoutSeconds <= 0 {
+		timeoutSeconds = 60 // Default 60 seconds
+	}
+	if timeoutSeconds > 3600 {
+		timeoutSeconds = 3600 // Max 3600 seconds
+	}
+	timeout := time.Duration(timeoutSeconds) * time.Second
+	ln.(*net.TCPListener).SetDeadline(time.Now().Add(timeout))
 
 	// Create progress tracker
 	tracker := NewProgressTrackerWithCompression(totalSize, isCompressed)
@@ -89,10 +100,16 @@ func StartStreamSender(port int, enableHandshake bool, handshakeKey string, tota
 	if !enableHandshake {
 		conn, err := ln.Accept()
 		if err != nil {
+			ln.Close()
+			if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
+				if logCtx != nil {
+					logCtx.WriteLog("TCP", "Connection timeout after %ds: %v", timeoutSeconds, err)
+				}
+				return nil, nil, nil, 0, "", fmt.Errorf("connection timeout after %ds on port %d: %v", timeoutSeconds, actualPort, err)
+			}
 			if logCtx != nil {
 				logCtx.WriteLog("TCP", "Failed to accept connection: %v", err)
 			}
-			ln.Close()
 			return nil, nil, nil, 0, "", fmt.Errorf("failed to accept connection on port %d: %v", actualPort, err)
 		}
 		fmt.Println("[backup-helper] Remote client connected, no handshake required.")
@@ -364,8 +381,9 @@ func StartStreamClientReader(host string, port int, enableHandshake bool, handsh
 // StartStreamReceiver starts a TCP server on the given port for receiving data.
 // It accepts connections and returns a ReadCloser for reading data from the remote client.
 // If port is 0, it will automatically find an available port.
+// timeoutSeconds: connection timeout in seconds (0 means use default 60s, max 3600s)
 // Returns the actual listening port and local IP for display.
-func StartStreamReceiver(port int, enableHandshake bool, handshakeKey string, totalSize int64, isCompressed bool, logCtx *LogContext) (io.ReadCloser, *ProgressTracker, func(), int, string, error) {
+func StartStreamReceiver(port int, enableHandshake bool, handshakeKey string, totalSize int64, isCompressed bool, timeoutSeconds int, logCtx *LogContext) (io.ReadCloser, *ProgressTracker, func(), int, string, error) {
 	var addr string
 	var actualPort int
 
@@ -400,11 +418,21 @@ func StartStreamReceiver(port int, enableHandshake bool, handshakeKey string, to
 	}
 
 	fmt.Fprintf(os.Stderr, "[backup-helper] Listening on %s:%d\n", localIP, actualPort)
-	fmt.Fprintf(os.Stderr, "[backup-helper] Waiting for remote connection...\n")
+	fmt.Fprintf(os.Stderr, "[backup-helper] Waiting for remote connection (timeout: %ds)...\n", timeoutSeconds)
 	if logCtx != nil {
 		logCtx.WriteLog("TCP", "Listening on %s:%d", localIP, actualPort)
-		logCtx.WriteLog("TCP", "Waiting for remote connection...")
+		logCtx.WriteLog("TCP", "Waiting for remote connection (timeout: %ds)", timeoutSeconds)
 	}
+
+	// Set timeout for accepting connections
+	if timeoutSeconds <= 0 {
+		timeoutSeconds = 60 // Default 60 seconds
+	}
+	if timeoutSeconds > 3600 {
+		timeoutSeconds = 3600 // Max 3600 seconds
+	}
+	timeout := time.Duration(timeoutSeconds) * time.Second
+	ln.(*net.TCPListener).SetDeadline(time.Now().Add(timeout))
 
 	// Create progress tracker for download mode
 	tracker := NewDownloadProgressTracker(totalSize)
@@ -413,10 +441,16 @@ func StartStreamReceiver(port int, enableHandshake bool, handshakeKey string, to
 	if !enableHandshake {
 		conn, err := ln.Accept()
 		if err != nil {
+			ln.Close()
+			if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
+				if logCtx != nil {
+					logCtx.WriteLog("TCP", "Connection timeout after %ds: %v", timeoutSeconds, err)
+				}
+				return nil, nil, nil, 0, "", fmt.Errorf("connection timeout after %ds on port %d: %v", timeoutSeconds, actualPort, err)
+			}
 			if logCtx != nil {
 				logCtx.WriteLog("TCP", "Failed to accept connection: %v", err)
 			}
-			ln.Close()
 			return nil, nil, nil, 0, "", fmt.Errorf("failed to accept connection on port %d: %v", actualPort, err)
 		}
 		fmt.Fprintf(os.Stderr, "[backup-helper] Remote client connected, no handshake required.\n")

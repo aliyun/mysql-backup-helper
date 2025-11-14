@@ -404,7 +404,8 @@ func CheckForBackupMode(cfg *Config, compressType string, db *sql.DB, streamHost
 			results = append(results, connectivityResults...)
 		} else {
 			// Check local port listenability
-			listenResults := CheckTCPPortListenability(streamPort)
+			// Use default timeout for check mode (60s)
+			listenResults := CheckTCPPortListenability(streamPort, 60)
 			results = append(results, listenResults...)
 		}
 	}
@@ -566,7 +567,8 @@ func CheckForDownloadMode(cfg *Config, compressType string, targetDir string, st
 			results = append(results, connectivityResults...)
 		} else {
 			// Check local port listenability
-			listenResults := CheckTCPPortListenability(streamPort)
+			// Use default timeout for check mode (60s)
+			listenResults := CheckTCPPortListenability(streamPort, 60)
 			results = append(results, listenResults...)
 		}
 	}
@@ -576,7 +578,8 @@ func CheckForDownloadMode(cfg *Config, compressType string, targetDir string, st
 
 // CheckTCPPortListenability checks if a local port can be listened on and waits for a connection with timeout
 // This is used for --check mode to verify port availability
-func CheckTCPPortListenability(port int) []CheckResult {
+// timeoutSeconds: connection timeout in seconds (0 means use default 60s, max 3600s)
+func CheckTCPPortListenability(port int, timeoutSeconds int) []CheckResult {
 	var results []CheckResult
 
 	if port <= 0 {
@@ -597,8 +600,14 @@ func CheckTCPPortListenability(port int) []CheckResult {
 	}
 
 	// Port can be listened on, now wait for a connection with timeout
-	// Set a timeout for accepting connections (10 seconds)
-	timeout := 10 * time.Second
+	// Set a timeout for accepting connections
+	if timeoutSeconds <= 0 {
+		timeoutSeconds = 60 // Default 60 seconds
+	}
+	if timeoutSeconds > 3600 {
+		timeoutSeconds = 3600 // Max 3600 seconds
+	}
+	timeout := time.Duration(timeoutSeconds) * time.Second
 	ln.(*net.TCPListener).SetDeadline(time.Now().Add(timeout))
 
 	i18n.Printf("Checking port %d: listening and waiting for connection (timeout: %v)...\n", port, timeout)

@@ -37,6 +37,7 @@ type Config struct {
 	UseMemory       string  `json:"useMemory"`
 	XtrabackupPath  string  `json:"xtrabackupPath"`
 	DefaultsFile    string  `json:"defaultsFile"`
+	Timeout         int     `json:"timeout"` // TCP connection timeout in seconds (default: 60, max: 3600)
 }
 
 func LoadConfig(path string) (*Config, error) {
@@ -68,6 +69,13 @@ func (c *Config) SetDefaults() {
 	}
 	if c.UseMemory == "" {
 		c.UseMemory = "1G" // Default memory for prepare operation
+	}
+	if c.Timeout == 0 {
+		c.Timeout = 60 // Default TCP connection timeout: 60 seconds
+	}
+	// Enforce maximum timeout: 3600 seconds (1 hour)
+	if c.Timeout > 3600 {
+		c.Timeout = 3600
 	}
 }
 

@@ -165,6 +165,8 @@ func main() {
 	flag.StringVar(&aiDiagnoseFlag, "ai-diagnose", "", "AI diagnosis on backup failure: on/off. If not set, prompt interactively.")
 	flag.BoolVar(&enableHandshake, "enable-handshake", false, "Enable handshake for TCP streaming (default: false, can be set in config)")
 	flag.StringVar(&streamKey, "stream-key", "", "Handshake key for TCP streaming (default: empty, can be set in config)")
+	var timeout int
+	flag.IntVar(&timeout, "timeout", 0, "TCP connection timeout in seconds for listening (default: 60, max: 3600)")
 	flag.BoolVar(&useSSH, "ssh", false, "Use SSH to start receiver on remote host (requires --stream-host)")
 	flag.StringVar(&remoteOutput, "remote-output", "", "Remote output path when using SSH mode (default: auto-generated)")
 	flag.IntVar(&parallel, "parallel", 0, "Number of parallel threads for xtrabackup (default: 4)")
@@ -301,6 +303,18 @@ func main() {
 	} else if cfg.UseMemory == "" {
 		// Use default (1G) if not specified in command line or config
 		cfg.UseMemory = "1G"
+	}
+
+	// Parse timeout from command line or config
+	if timeout > 0 {
+		cfg.Timeout = timeout
+	} else if cfg.Timeout == 0 {
+		// Use default (60) if not specified in command line or config
+		cfg.Timeout = 60
+	}
+	// Enforce maximum timeout: 3600 seconds (1 hour)
+	if cfg.Timeout > 3600 {
+		cfg.Timeout = 3600
 	}
 
 	// 4. Handle --check mode
@@ -780,7 +794,7 @@ func main() {
 			logCtx.WriteLog("DOWNLOAD", "Starting TCP receiver on port %d", streamPort)
 			var actualPort int
 			var localIP string
-			receiver, tracker, closer, actualPort, localIP, err = utils.StartStreamReceiver(streamPort, enableHandshake, streamKey, estimatedSize, isCompressed, logCtx)
+			receiver, tracker, closer, actualPort, localIP, err = utils.StartStreamReceiver(streamPort, enableHandshake, streamKey, estimatedSize, isCompressed, cfg.Timeout, logCtx)
 			_ = actualPort // Port info already displayed in StartStreamReceiver
 			_ = localIP    // IP info already displayed in StartStreamReceiver
 			if err != nil {
@@ -1266,7 +1280,7 @@ func main() {
 					streamPort = cfg.StreamPort
 				}
 
-				tcpWriter, _, closerFunc, actualPort, localIP, err := utils.StartStreamSender(streamPort, enableHandshake, streamKey, totalSize, cfg.CompressType != "", logCtx)
+				tcpWriter, _, closerFunc, actualPort, localIP, err := utils.StartStreamSender(streamPort, enableHandshake, streamKey, totalSize, cfg.CompressType != "", cfg.Timeout, logCtx)
 				_ = actualPort // Port info already displayed in StartStreamSender
 				_ = localIP    // IP info already displayed in StartStreamSender
 				if err != nil {
@@ -1533,7 +1547,7 @@ func main() {
 			} else {
 				// Passive connection: listen locally and wait for connection
 				// streamPort can be 0 now (auto-find available port)
-				tcpWriter, _, closerFunc, actualPort, localIP, err := utils.StartStreamSender(streamPort, enableHandshake, streamKey, totalSize, cfg.CompressType != "", logCtx)
+				tcpWriter, _, closerFunc, actualPort, localIP, err := utils.StartStreamSender(streamPort, enableHandshake, streamKey, totalSize, cfg.CompressType != "", cfg.Timeout, logCtx)
 				_ = actualPort // Port info already displayed in StartStreamSender
 				_ = localIP    // IP info already displayed in StartStreamSender
 				if err != nil {
