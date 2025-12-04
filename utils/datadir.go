@@ -21,12 +21,12 @@ func GetDatadirFromMySQL(db *sql.DB) (string, error) {
 func CalculateBackupSize(datadir string) (int64, error) {
 	var totalSize int64
 
-	err := filepath.Walk(datadir, func(path string, info os.FileInfo, err error) error {
+	err := filepath.WalkDir(datadir, func(path string, d os.DirEntry, err error) error {
 		if err != nil {
 			return nil
 		}
 
-		if info.IsDir() {
+		if d.IsDir() {
 			return nil
 		}
 
@@ -57,6 +57,10 @@ func CalculateBackupSize(datadir string) (int64, error) {
 		}
 
 		if shouldBackup {
+			info, err := d.Info()
+			if err != nil {
+				return nil
+			}
 			totalSize += info.Size()
 		}
 
