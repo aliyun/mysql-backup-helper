@@ -134,7 +134,11 @@
 ### 1. 编译
 
 ```sh
-go build -a -o backup-helper main.go
+# 使用 makefile（推荐）
+make build
+
+# 或直接使用 go build
+go build -a -o backup-helper ./cmd/backup-helper
 ```
 
 ### 2. 一键备份并上传 OSS（自动中文/英文）

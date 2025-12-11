@@ -134,7 +134,11 @@ A high-efficiency MySQL physical backup and OSS upload tool. Supports Percona Xt
 ### 1. Build
 
 ```sh
-go build -a -o backup-helper main.go
+# Using makefile (recommended)
+make build
+
+# Or directly using go build
+go build -a -o backup-helper ./cmd/backup-helper
 ```
 
 ### 2. One-click backup and upload to OSS (auto language)

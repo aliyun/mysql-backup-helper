@@ -16,7 +16,7 @@ endif
 # 构建（嵌入版本，不依赖运行时文件）
 build:
 	@echo "Building $(APP_NAME) (version: $(RESOLVED_VERSION))..."
-	@go build -a -ldflags="-X 'backup-helper/utils.BuildVersion=$(RESOLVED_VERSION)'" -o $(APP_NAME) main.go
+	@go build -a -ldflags="-X 'backup-helper/internal/utils.BuildVersion=$(RESOLVED_VERSION)'" -o $(APP_NAME) ./cmd/backup-helper
 	@echo "Build completed: $(APP_NAME)"
 
 # 显示通过 Git 标签/文件解析出的版本

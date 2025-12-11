@@ -12,7 +12,7 @@ REMOTE=$(git rev-parse origin/develop)
 if [ "$LOCAL" != "$REMOTE" ]; then
     echo "检测到代码更新，开始 pull 并重新构建..."
     git pull
-    go build -a -o backup-helper main.go
+    go build -a -ldflags="-X 'backup-helper/internal/utils.BuildVersion=$(git describe --tags --abbrev=0 2>/dev/null || cat VERSION 2>/dev/null || echo 0.0.0)'" -o backup-helper ./cmd/backup-helper
 else
     echo "没有代码更新，跳过构建。"
 fi
