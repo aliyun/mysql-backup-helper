@@ -219,6 +219,11 @@ func HandleCheck(cfg *config.Config, effective *config.EffectiveValues, flags *c
 		i18n.Printf("PREPARE mode:  %s\n", map[bool]string{true: "[ERROR] Cannot proceed", false: "[OK] Ready"}[prepareHasError])
 		i18n.Printf("\nTo run a specific mode, use: --backup, --download, or --prepare\n")
 		i18n.Printf("To check a specific mode only, use: --check --backup, --check --download, or --check --prepare\n")
+
+		// Exit with error code if any mode has critical errors
+		if backupHasError || downloadHasError || prepareHasError {
+			os.Exit(1)
+		}
 	}
 	return nil
 }
