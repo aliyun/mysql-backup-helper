@@ -363,21 +363,75 @@ func CheckMySQLCompatibility(db *sql.DB, cfg *config.Config) []CheckResult {
 	}
 
 	// Check replication parameters
-	replicationItems := []string{"server_id", "log_bin", "gtid_mode", "enforce_gtid_consistency"}
+	// Required: gtid_mode=ON, enforce_gtid_consistency=ON, log_bin=ON or 1
+	var repErrors []string
 	var repValues []string
-	for _, item := range replicationItems {
-		if val, ok := options[item]; ok && val != "" {
-			repValues = append(repValues, fmt.Sprintf("%s=%s", item, val))
+
+	// Check gtid_mode
+	// MySQL gtid_mode valid values: OFF, OFF_PERMISSIVE, ON_PERMISSIVE, ON (case-sensitive in MySQL, but we accept case-insensitive)
+	// We require ON (accepts ON, on, On, etc., but not 1 or other values)
+	if gtidMode, ok := options["gtid_mode"]; ok && gtidMode != "" {
+		repValues = append(repValues, fmt.Sprintf("gtid_mode=%s", gtidMode))
+		gtidModeUpper := strings.ToUpper(gtidMode)
+		if gtidModeUpper != "ON" {
+			repErrors = append(repErrors, fmt.Sprintf("gtid_mode must be ON (case-insensitive), but got %s", gtidMode))
 		}
+	} else {
+		repErrors = append(repErrors, "gtid_mode is not set")
 	}
-	if len(repValues) > 0 {
-		results = append(results, CheckResult{
-			Status:  "OK",
-			Item:    "Replication parameters",
-			Value:   strings.Join(repValues, ", "),
-			Message: "",
-		})
+
+	// Check enforce_gtid_consistency
+	// MySQL enforce_gtid_consistency valid values: OFF, ON, WARN (case-sensitive in MySQL, but we accept case-insensitive)
+	// We require ON (accepts ON, on, On, etc., but not 1 or other values)
+	if enforceGTID, ok := options["enforce_gtid_consistency"]; ok && enforceGTID != "" {
+		repValues = append(repValues, fmt.Sprintf("enforce_gtid_consistency=%s", enforceGTID))
+		enforceGTIDUpper := strings.ToUpper(enforceGTID)
+		if enforceGTIDUpper != "ON" {
+			repErrors = append(repErrors, fmt.Sprintf("enforce_gtid_consistency must be ON (case-insensitive), but got %s", enforceGTID))
+		}
+	} else {
+		repErrors = append(repErrors, "enforce_gtid_consistency is not set")
 	}
+
+	// Check log_bin
+	// MySQL log_bin valid values: ON, OFF, or a filename/path (case-sensitive in MySQL, but we accept case-insensitive for ON/OFF)
+	// We require log_bin to be enabled (ON or a filename/path, but not OFF, 0, or empty)
+	if logBin, ok := options["log_bin"]; ok && logBin != "" {
+		repValues = append(repValues, fmt.Sprintf("log_bin=%s", logBin))
+		logBinUpper := strings.ToUpper(logBin)
+		// log_bin can be ON or a filename/path (any non-empty value that's not OFF means it's enabled)
+		if logBinUpper == "OFF" || logBin == "0" {
+			repErrors = append(repErrors, fmt.Sprintf("log_bin must be enabled (ON or a filename), but got %s", logBin))
+		}
+		// If log_bin is ON (case-insensitive) or any other non-empty value (filename/path), it's considered enabled
+	} else {
+		repErrors = append(repErrors, "log_bin is not set")
+	}
+
+	// Check server_id (optional, but log it)
+	if serverID, ok := options["server_id"]; ok && serverID != "" {
+		repValues = append(repValues, fmt.Sprintf("server_id=%s", serverID))
+	}
+
+	// Report replication parameters check result
+	status := "OK"
+	message := ""
+	if len(repErrors) > 0 {
+		status = "ERROR"
+		message = strings.Join(repErrors, "; ")
+	}
+
+	value := strings.Join(repValues, ", ")
+	if value == "" {
+		value = "not set"
+	}
+
+	results = append(results, CheckResult{
+		Status:  status,
+		Item:    "Replication parameters",
+		Value:   value,
+		Message: message,
+	})
 
 	// Validate defaults-file (only if explicitly set in config)
 	// We do NOT auto-detect to avoid using wrong config file (e.g., from another MySQL instance)
