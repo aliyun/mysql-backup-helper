@@ -129,9 +129,9 @@ A high-efficiency MySQL physical backup and OSS upload tool. Supports Percona Xt
 
 ---
 
-## Typical Usage
+## Quick Start
 
-### 1. Build
+### Build
 
 ```sh
 # Using makefile (recommended)
@@ -141,36 +141,91 @@ make build
 go build -a -o backup-helper ./cmd/backup-helper
 ```
 
-### 2. One-click backup and upload to OSS (auto language)
+---
+
+## Usage Modes
+
+The tool supports multiple usage modes for different scenarios:
+
+### 1. Backup Mode (BACKUP)
+
+Backup mode performs MySQL physical backup and supports two output methods: OSS upload and TCP streaming.
+
+#### 1.1 OSS Mode
+
+Upload backup directly to Alibaba Cloud OSS.
+
+**Basic Usage:**
 
 ```sh
+# Using config file, one-click backup and upload to OSS
 ./backup-helper --config config.json --backup --mode=oss
+
+# Pure command-line arguments (no config file needed)
+./backup-helper --host=127.0.0.1 --user=root --password=123456 --port=3306 \
+    --backup --mode=oss \
+    --endpoint=http://oss-cn-hangzhou.aliyuncs.com \
+    --access-key-id=your-key-id --access-key-secret=your-secret \
+    --bucket-name=your-bucket --object-name=backup/mysql
 ```
 
-### 3. Force English output
+**Compression Options:**
 
 ```sh
-./backup-helper --config config.json --backup --mode=oss --lang=en
-```
-
-### 4. Specify compression type
-
-```sh
+# Use zstd compression (recommended, high compression ratio and fast)
 ./backup-helper --config config.json --backup --mode=oss --compress=zstd
+
+# Use qpress compression (MySQL 5.7 default compression)
 ./backup-helper --config config.json --backup --mode=oss --compress=qp
+./backup-helper --config config.json --backup --mode=oss --compress  # Default qp
+
+# No compression (raw backup stream)
 ./backup-helper --config config.json --backup --mode=oss --compress=no
-./backup-helper --config config.json --backup --mode=oss --compress
 ```
 
-### 5. Streaming mode
+**Rate Limiting and Progress:**
 
 ```sh
+# Limit upload speed to 100 MB/s
+./backup-helper --config config.json --backup --mode=oss --io-limit 100MB/s
+
+# Disable rate limiting (maximum upload speed)
+./backup-helper --config config.json --backup --mode=oss --io-limit -1
+
+# Specify estimated size for accurate progress display
+./backup-helper --config config.json --backup --mode=oss --estimated-size 10GB
+```
+
+**Advanced Options:**
+
+```sh
+# Specify parallel threads (default: 4)
+./backup-helper --config config.json --backup --mode=oss --parallel=8
+
+# Specify language interface
+./backup-helper --config config.json --backup --mode=oss --lang=en
+
+# Enable AI diagnosis (auto-diagnose on failure)
+./backup-helper --config config.json --backup --mode=oss --ai-diagnose=on
+
+# Non-interactive mode (auto-confirm all prompts)
+./backup-helper --config config.json --backup --mode=oss -y
+```
+
+#### 1.2 Stream Mode (Passive Listen)
+
+Listen on local port, wait for remote client to connect and receive backup data.
+
+**Basic Usage:**
+
+```sh
+# Specify port to listen
 ./backup-helper --config config.json --backup --mode=stream --stream-port=9999
-# In another terminal, pull the stream:
+# In another terminal, connect and receive data
 nc 127.0.0.1 9999 > streamed-backup.xb
 ```
 
-### 5.1. Auto-find available port (recommended)
+**Auto-find Available Port (Recommended):**
 
 ```sh
 ./backup-helper --config config.json --backup --mode=stream --stream-port=0
@@ -182,15 +237,21 @@ nc 127.0.0.1 9999 > streamed-backup.xb
 nc 192.168.1.100 54321 > streamed-backup.xb
 ```
 
-- **In stream mode, all compression options are ignored; the backup is always sent as a raw physical stream.**
-- **When auto-finding ports, the program automatically obtains and displays the local IP in the output, making remote connections easy.**
-- **Use `--stream-host` to actively push to a remote server; the receiver side uses `--download --stream-port` to listen on the specified port.**
+**Important Notes:**
+- In stream mode, all compression options are ignored; the backup is always sent as a raw physical stream
+- When auto-finding ports, the program automatically obtains and displays the local IP in the output, making remote connections easy
+- The receiver side can use `backup-helper --download` or `nc` to receive data
 
-### 5.2. Actively push to remote server
+#### 1.3 Stream Mode (Active Push)
+
+Actively connect to remote server and push backup data.
+
+**Basic Usage:**
 
 ```sh
 # Sender side: actively connect to remote server and push data
-./backup-helper --config config.json --backup --mode=stream --stream-host=192.168.1.100 --stream-port=9999
+./backup-helper --config config.json --backup --mode=stream \
+    --stream-host=192.168.1.100 --stream-port=9999
 
 # Receiver side: listen and receive data on remote server
 ./backup-helper --download --stream-port=9999
@@ -198,9 +259,11 @@ nc 192.168.1.100 54321 > streamed-backup.xb
 
 This achieves similar functionality to `xtrabackup | nc 192.168.1.100 9999`.
 
-### 5.3. SSH Mode: Automatically start receiver on remote host
+#### 1.4 SSH Mode
 
-If you have SSH access, you can use `--ssh` to automatically start the receiver on the remote host:
+Automatically start receiver service on remote host via SSH, no manual operation needed.
+
+**Basic Usage:**
 
 ```sh
 # SSH mode + auto-discover port (recommended)
@@ -217,10 +280,12 @@ If you have SSH access, you can use `--ssh` to automatically start the receiver 
     --stream-port=9999 \
     --remote-output=/backup/mysql_backup.xb
 
-# Traditional mode: requires manually running receiver on remote
+# SSH mode + auto decompress and extract to directory
 ./backup-helper --config config.json --backup --mode=stream \
     --stream-host=replica-server \
-    --stream-port=9999
+    --ssh \
+    --target-dir=/backup/mysql \
+    --compress=zstd
 ```
 
 **SSH Mode Notes:**
@@ -230,9 +295,114 @@ If you have SSH access, you can use `--ssh` to automatically start the receiver 
 - Automatically cleans up remote process after transfer completes
 - Similar to `rsync -e ssh` usage - if SSH keys are configured, it just works
 
-### 6. Pre-check Mode (--check)
+---
 
-The `--check` mode can be used alone or combined with other modes:
+### 2. Download Mode (DOWNLOAD)
+
+Receive backup data from TCP stream and save or extract.
+
+**Basic Usage:**
+
+```sh
+# Download to default file (backup_YYYYMMDDHHMMSS.xb)
+./backup-helper --download --stream-port 9999
+
+# Download to specified file
+./backup-helper --download --stream-port 9999 --output my_backup.xb
+
+# Stream to stdout (can be used with pipes for compression or extraction)
+./backup-helper --download --stream-port 9999 --output - | zstd -d > backup.xb
+./backup-helper --download --stream-port 9999 --output - | xbstream -x -C /path/to/extract/dir
+```
+
+**Extract to Directory:**
+
+```sh
+# Uncompressed backup: directly extract to directory
+./backup-helper --download --stream-port 9999 --target-dir /path/to/extract/dir
+
+# Zstd compressed backup: stream decompress then extract (recommended)
+./backup-helper --download --stream-port 9999 --compress=zstd --target-dir /path/to/extract/dir
+
+# Qpress compressed backup: auto decompress and extract (note: requires saving to file first, no stream decompression)
+./backup-helper --download --stream-port 9999 --compress=qp --target-dir /path/to/extract/dir
+```
+
+**Advanced Options:**
+
+```sh
+# Download with rate limiting
+./backup-helper --download --stream-port 9999 --io-limit 100MB/s
+
+# Download with progress display (requires estimated size)
+./backup-helper --download --stream-port 9999 --estimated-size 1GB
+
+# Non-interactive mode: automatically confirm all prompts
+./backup-helper --download --stream-port 9999 --target-dir /backup/mysql --compress=zstd -y
+
+# Use config file
+./backup-helper --config config.json --download --stream-port 9999
+```
+
+**Download Mode Compression Type Notes:**
+
+- **Zstd compression (`--compress=zstd`)**:
+  - Supports stream decompression, can directly decompress and extract to directory
+  - When using `--target-dir`, automatically executes `zstd -d | xbstream -x`
+  - When using `--output -`, outputs decompressed stream that can be piped to `xbstream`
+
+- **Qpress compression (`--compress=qp` or `--compress`)**:
+  - **Does not support stream decompression** (xbstream in MySQL 5.7 does not support `--decompress` in stream mode)
+  - When using `--target-dir`, saves compressed file first, then uses `xbstream -x` to extract, finally uses `xtrabackup --decompress` to decompress
+  - When using `--output -`, warns and outputs raw compressed stream
+
+- **Uncompressed backup**:
+  - When `--compress` is not specified, saves or extracts directly
+  - When using `--target-dir`, directly uses `xbstream -x` to extract
+
+**Note:**
+- If the directory specified by `--target-dir` already exists and is not empty, the program will prompt you to confirm overwriting existing files
+- Enter `y` or `yes` to continue extraction (may overwrite existing files)
+- Enter `n` or any other value to cancel extraction and exit
+- Use `-y` or `--yes` flag to automatically confirm all prompts (non-interactive mode), suitable for scripts and automation scenarios
+
+---
+
+### 3. Prepare Mode (PREPARE)
+
+After backup is complete, execute prepare to make the backup ready for restore.
+
+**Basic Usage:**
+
+```sh
+# Basic usage
+./backup-helper --prepare --target-dir=/path/to/backup
+
+# Specify parallel threads and memory size
+./backup-helper --prepare --target-dir=/path/to/backup --parallel=8 --use-memory=2G
+
+# Use config file
+./backup-helper --config config.json --prepare --target-dir=/path/to/backup
+
+# Optional: Provide MySQL connection info and --defaults-file
+./backup-helper --prepare --target-dir=/path/to/backup \
+    --host=127.0.0.1 --user=root --port=3306 \
+    --defaults-file=/etc/my.cnf
+```
+
+**Notes:**
+- `--target-dir`: Required, specifies the backup directory to prepare
+- `--parallel`: Number of parallel threads, default 4 (can be set in config file or command line)
+- `--use-memory`: Memory to use for prepare operation, default 1G (supports units: G, M, K)
+- `--defaults-file`: Optional, manually specify MySQL config file path (if not specified, no auto-detection is performed)
+
+---
+
+### 4. Pre-check Mode (CHECK)
+
+Perform pre-flight validation, can be used alone or combined with other modes.
+
+**Basic Usage:**
 
 ```sh
 # Use alone: check all modes (BACKUP, DOWNLOAD, PREPARE)
@@ -266,148 +436,64 @@ The `--check` mode can be used alone or combined with other modes:
 - If pre-flight checks find critical issues (ERROR), the tool will stop and prompt you to fix them
 - When using `--check` combined with a mode (e.g., `--check --backup`), only checks are performed, no actual operations are executed
 
-### 7. Parameter check only (no backup)
+---
+
+### 5. Existing Backup Handling (EXISTED_BACKUP)
+
+Upload or stream existing backup files.
+
+**Upload to OSS:**
 
 ```sh
-./backup-helper --config config.json
-```
-
-### 8. All command-line (no config.json)
-
-```sh
-./backup-helper --host=127.0.0.1 --user=root --password=123456 --port=3306 --backup --mode=oss --compress=qp
-```
-
-### 9. Upload existing backup file to OSS
-
-```sh
+# Upload local backup file to OSS
 ./backup-helper --config config.json --existed-backup backup.xb --mode=oss
+
+# Read from stdin and upload to OSS
+cat backup.xb | ./backup-helper --config config.json --existed-backup - --mode=oss
+
+# Upload with compression (note: if backup is already compressed, this option is ignored)
+./backup-helper --config config.json --existed-backup backup.xb --mode=oss --compress=zstd
 ```
 
-### 10. Stream existing backup file via TCP
+**Stream via TCP:**
 
 ```sh
+# Stream local backup file
 ./backup-helper --config config.json --existed-backup backup.xb --mode=stream --stream-port=9999
 # In another terminal, pull the stream:
 nc 127.0.0.1 9999 > streamed-backup.xb
-```
 
-### 11. Use cat command to read from stdin and upload to OSS
-
-```sh
-cat backup.xb | ./backup-helper --config config.json --existed-backup - --mode=oss
-```
-
-### 12. Use cat command to read from stdin and stream via TCP
-
-```sh
+# Read from stdin and stream via TCP
 cat backup.xb | ./backup-helper --config config.json --existed-backup - --mode=stream --stream-port=9999
+
+# Actively push to remote server
+./backup-helper --config config.json --existed-backup backup.xb \
+    --mode=stream --stream-host=192.168.1.100 --stream-port=9999
 ```
 
-### 13. Manually specify upload rate limit (e.g., limit to 100 MB/s)
+**Advanced Options:**
 
 ```sh
-./backup-helper --config config.json --backup --mode=oss --io-limit 100MB/s
-# Supports units: KB/s, MB/s, GB/s, TB/s, or use bytes per second directly
+# Upload with rate limiting
+./backup-helper --config config.json --existed-backup backup.xb --mode=oss --io-limit 100MB/s
+
+# Specify estimated size for accurate progress display
+./backup-helper --config config.json --existed-backup backup.xb --mode=oss --estimated-size 10GB
 ```
 
-### 14. Disable rate limiting (unlimited upload speed)
+---
+
+### 6. Parameter Validation Mode
+
+Only validate configuration parameters, do not execute any operations.
 
 ```sh
-./backup-helper --config config.json --backup --mode=oss --io-limit -1
-# Use -1 to completely disable rate limiting for maximum upload speed
+# Validate parameters using config file
+./backup-helper --config config.json
+
+# Validate pure command-line parameters
+./backup-helper --host=127.0.0.1 --user=root --password=123456 --port=3306
 ```
-
-### 15. Specify estimated size for accurate progress display
-
-```sh
-./backup-helper --config config.json --backup --mode=oss --estimated-size 1GB
-# Supports units: KB, MB, GB, TB, or use bytes directly
-# Example: --estimated-size 1073741824 or --estimated-size 1GB
-```
-
-### 15. Prepare backup (Prepare Mode)
-
-After backup is complete, execute prepare to make the backup ready for restore:
-
-```sh
-# Basic usage
-./backup-helper --prepare --target-dir=/path/to/backup
-
-# Specify parallel threads and memory size
-./backup-helper --prepare --target-dir=/path/to/backup --parallel=8 --use-memory=2G
-
-# Use config file
-./backup-helper --config config.json --prepare --target-dir=/path/to/backup
-
-# Optional: Provide MySQL connection info and --defaults-file
-./backup-helper --prepare --target-dir=/path/to/backup --host=127.0.0.1 --user=root --port=3306 --defaults-file=/etc/my.cnf
-```
-
-**Notes**:
-- `--target-dir`: Required, specifies the backup directory to prepare
-- `--parallel`: Number of parallel threads, default 4 (can be set in config file or command line)
-- `--use-memory`: Memory to use for prepare operation, default 1G (supports units: G, M, K)
-- `--defaults-file`: Optional, manually specify MySQL config file path (if not specified, no auto-detection is performed)
-
-### 16. Download mode: Receive backup data from TCP stream
-
-```sh
-# Download to default file (backup_YYYYMMDDHHMMSS.xb)
-./backup-helper --download --stream-port 9999
-
-# Download to specified file
-./backup-helper --download --stream-port 9999 --output my_backup.xb
-
-# Stream to stdout (can be used with pipes for compression or extraction)
-./backup-helper --download --stream-port 9999 --output - | zstd -d > backup.xb
-
-# Direct extraction using xbstream (uncompressed backup)
-./backup-helper --download --stream-port 9999 --output - | xbstream -x -C /path/to/extract/dir
-
-# Zstd compressed backup: stream decompress then extract (recommended)
-./backup-helper --download --stream-port 9999 --compress=zstd --target-dir /path/to/extract/dir
-
-# Zstd compressed backup: stream to stdout (can be piped to xbstream)
-./backup-helper --download --stream-port 9999 --compress=zstd --output - | xbstream -x -C /path/to/extract/dir
-
-# Qpress compressed backup: auto decompress and extract (note: requires saving to file first, no stream decompression)
-./backup-helper --download --stream-port 9999 --compress=qp --target-dir /path/to/extract/dir
-
-# Save zstd compressed backup (auto decompress)
-./backup-helper --download --stream-port 9999 --compress=zstd --output my_backup.xb
-
-# Download with rate limiting
-./backup-helper --download --stream-port 9999 --io-limit 100MB/s
-
-# Download with progress display (requires estimated size)
-./backup-helper --download --stream-port 9999 --estimated-size 1GB
-
-# Non-interactive mode: automatically confirm all prompts
-./backup-helper --download --stream-port 9999 --target-dir /backup/mysql --compress=zstd -y
-```
-
-**Note**:
-- If the directory specified by `--target-dir` already exists and is not empty, the program will prompt you to confirm overwriting existing files
-- Enter `y` or `yes` to continue extraction (may overwrite existing files)
-- Enter `n` or any other value to cancel extraction and exit
-- Use `-y` or `--yes` flag to automatically confirm all prompts (non-interactive mode), suitable for scripts and automation scenarios
-
-**Download mode compression type notes:**
-
-- **Zstd compression (`--compress=zstd`)**:
-  - Supports stream decompression, can directly decompress and extract to directory
-  - When using `--target-dir`, automatically executes `zstd -d | xbstream -x`
-  - When using `--output -`, outputs decompressed stream that can be piped to `xbstream`
-
-- **Qpress compression (`--compress=qp` or `--compress`)**:
-  - **Does not support stream decompression** (xbstream in MySQL 5.7 does not support `--decompress` in stream mode)
-  - When using `--target-dir`, saves compressed file first, then uses `xbstream -x` to extract, finally uses `xtrabackup --decompress` to decompress
-  - When using `--output -`, warns and outputs raw compressed stream
-
-- **Uncompressed backup**:
-  - When `--compress` is not specified, saves or extracts directly
-  - When using `--target-dir`, directly uses `xbstream -x` to extract
 
 ---
 

@@ -129,9 +129,9 @@
 
 ---
 
-## 典型用法
+## 快速开始
 
-### 1. 编译
+### 编译
 
 ```sh
 # 使用 makefile（推荐）
@@ -141,36 +141,91 @@ make build
 go build -a -o backup-helper ./cmd/backup-helper
 ```
 
-### 2. 一键备份并上传 OSS（自动中文/英文）
+---
+
+## 使用模式
+
+工具支持多种使用模式，可根据不同场景选择：
+
+### 1. 备份模式（BACKUP）
+
+备份模式用于执行 MySQL 物理备份，支持两种输出方式：OSS 上传和 TCP 流式传输。
+
+#### 1.1 OSS 模式
+
+将备份直接上传到阿里云 OSS。
+
+**基本用法：**
 
 ```sh
+# 使用配置文件，一键备份并上传 OSS
 ./backup-helper --config config.json --backup --mode=oss
+
+# 纯命令行参数（无需配置文件）
+./backup-helper --host=127.0.0.1 --user=root --password=123456 --port=3306 \
+    --backup --mode=oss \
+    --endpoint=http://oss-cn-hangzhou.aliyuncs.com \
+    --access-key-id=your-key-id --access-key-secret=your-secret \
+    --bucket-name=your-bucket --object-name=backup/mysql
 ```
 
-### 3. 指定英文界面
+**压缩选项：**
 
 ```sh
-./backup-helper --config config.json --backup --mode=oss --lang=en
-```
-
-### 4. 指定压缩类型
-
-```sh
+# 使用 zstd 压缩（推荐，压缩率高、速度快）
 ./backup-helper --config config.json --backup --mode=oss --compress=zstd
+
+# 使用 qpress 压缩（MySQL 5.7 默认压缩方式）
 ./backup-helper --config config.json --backup --mode=oss --compress=qp
+./backup-helper --config config.json --backup --mode=oss --compress  # 默认 qp
+
+# 不压缩（原始备份流）
 ./backup-helper --config config.json --backup --mode=oss --compress=no
-./backup-helper --config config.json --backup --mode=oss --compress
 ```
 
-### 5. 流式推送（stream 模式）
+**限速和进度：**
 
 ```sh
+# 限制上传速度为 100 MB/s
+./backup-helper --config config.json --backup --mode=oss --io-limit 100MB/s
+
+# 禁用限速（最大速度上传）
+./backup-helper --config config.json --backup --mode=oss --io-limit -1
+
+# 指定预估大小以显示准确进度
+./backup-helper --config config.json --backup --mode=oss --estimated-size 10GB
+```
+
+**高级选项：**
+
+```sh
+# 指定并行线程数（默认 4）
+./backup-helper --config config.json --backup --mode=oss --parallel=8
+
+# 指定语言界面
+./backup-helper --config config.json --backup --mode=oss --lang=en
+
+# 启用 AI 诊断（失败时自动诊断）
+./backup-helper --config config.json --backup --mode=oss --ai-diagnose=on
+
+# 非交互模式（自动确认所有提示）
+./backup-helper --config config.json --backup --mode=oss -y
+```
+
+#### 1.2 Stream 模式（被动监听）
+
+在本地监听端口，等待远程客户端连接并接收备份数据。
+
+**基本用法：**
+
+```sh
+# 指定端口监听
 ./backup-helper --config config.json --backup --mode=stream --stream-port=9999
-# 另一个终端拉流
+# 另一个终端连接并接收数据
 nc 127.0.0.1 9999 > streamed-backup.xb
 ```
 
-### 5.1. 自动查找空闲端口（推荐）
+**自动查找空闲端口（推荐）：**
 
 ```sh
 ./backup-helper --config config.json --backup --mode=stream --stream-port=0
@@ -182,15 +237,21 @@ nc 127.0.0.1 9999 > streamed-backup.xb
 nc 192.168.1.100 54321 > streamed-backup.xb
 ```
 
-- **stream 模式下所有压缩参数均无效，始终为原始物理备份流。**
-- **自动查找端口时会自动获取本地 IP 并显示在输出中，便于远程连接。**
-- **使用 `--stream-host` 可以主动推送到远程服务器，接收端使用 `--download --stream-port` 在指定端口监听。**
+**重要提示：**
+- Stream 模式下所有压缩参数均无效，始终为原始物理备份流
+- 自动查找端口时会自动获取本地 IP 并显示在输出中，便于远程连接
+- 接收端可以使用 `backup-helper --download` 或 `nc` 等工具接收数据
 
-### 5.2. 主动推送到远程服务器
+#### 1.3 Stream 模式（主动推送）
+
+主动连接到远程服务器并推送备份数据。
+
+**基本用法：**
 
 ```sh
 # 发送端：主动连接到远程服务器并推送数据
-./backup-helper --config config.json --backup --mode=stream --stream-host=192.168.1.100 --stream-port=9999
+./backup-helper --config config.json --backup --mode=stream \
+    --stream-host=192.168.1.100 --stream-port=9999
 
 # 接收端：在远程服务器上监听并接收数据
 ./backup-helper --download --stream-port=9999
@@ -198,9 +259,11 @@ nc 192.168.1.100 54321 > streamed-backup.xb
 
 这样可以实现类似 `xtrabackup | nc 192.168.1.100 9999` 的功能。
 
-### 5.3. SSH 模式：自动在远程启动接收服务
+#### 1.4 SSH 模式
 
-如果有 SSH 权限，可以使用 `--ssh` 选项自动在远程主机启动接收服务，无需手动操作：
+自动通过 SSH 在远程主机启动接收服务，无需手动操作。
+
+**基本用法：**
 
 ```sh
 # SSH 模式 + 自动发现端口（推荐）
@@ -217,10 +280,12 @@ nc 192.168.1.100 54321 > streamed-backup.xb
     --stream-port=9999 \
     --remote-output=/backup/mysql_backup.xb
 
-# 传统模式：需要提前在远程运行接收服务
+# SSH 模式 + 自动解压解包到目录
 ./backup-helper --config config.json --backup --mode=stream \
     --stream-host=replica-server \
-    --stream-port=9999
+    --ssh \
+    --target-dir=/backup/mysql \
+    --compress=zstd
 ```
 
 **SSH 模式说明：**
@@ -230,9 +295,114 @@ nc 192.168.1.100 54321 > streamed-backup.xb
 - 传输完成后自动清理远程进程
 - 类似 `rsync -e ssh` 的使用方式，如果 SSH 密钥已配置好，直接就能用
 
-### 6. 预检查模式（--check）
+---
 
-`--check` 模式可以单独使用，也可以与其他模式组合使用：
+### 2. 下载模式（DOWNLOAD）
+
+从 TCP 流接收备份数据并保存或解包。
+
+**基本用法：**
+
+```sh
+# 下载到默认文件（backup_YYYYMMDDHHMMSS.xb）
+./backup-helper --download --stream-port 9999
+
+# 下载到指定文件
+./backup-helper --download --stream-port 9999 --output my_backup.xb
+
+# 流式输出到 stdout（可用于管道压缩或解包）
+./backup-helper --download --stream-port 9999 --output - | zstd -d > backup.xb
+./backup-helper --download --stream-port 9999 --output - | xbstream -x -C /path/to/extract/dir
+```
+
+**解包到目录：**
+
+```sh
+# 未压缩备份：直接解包到目录
+./backup-helper --download --stream-port 9999 --target-dir /path/to/extract/dir
+
+# Zstd 压缩备份：流式解压后解包（推荐方式）
+./backup-helper --download --stream-port 9999 --compress=zstd --target-dir /path/to/extract/dir
+
+# Qpress 压缩备份：自动解压和解包（注意：需要先保存文件，不支持流式解压）
+./backup-helper --download --stream-port 9999 --compress=qp --target-dir /path/to/extract/dir
+```
+
+**高级选项：**
+
+```sh
+# 带限速下载
+./backup-helper --download --stream-port 9999 --io-limit 100MB/s
+
+# 带进度显示（需要提供预估大小）
+./backup-helper --download --stream-port 9999 --estimated-size 1GB
+
+# 非交互模式：自动确认所有提示
+./backup-helper --download --stream-port 9999 --target-dir /backup/mysql --compress=zstd -y
+
+# 使用配置文件
+./backup-helper --config config.json --download --stream-port 9999
+```
+
+**下载模式压缩类型说明：**
+
+- **Zstd 压缩（`--compress=zstd`）**：
+  - 支持流式解压，可直接解压并解包到目录
+  - 使用 `--target-dir` 时，自动执行 `zstd -d | xbstream -x`
+  - 使用 `--output -` 时，输出解压后的流，可继续管道到 `xbstream`
+
+- **Qpress 压缩（`--compress=qp` 或 `--compress`）**：
+  - **不支持流式解压**（MySQL 5.7 的 xbstream 不支持 `--decompress` 流式操作）
+  - 使用 `--target-dir` 时，会先保存压缩文件，然后使用 `xbstream -x` 解包，最后使用 `xtrabackup --decompress` 解压
+  - 使用 `--output -` 时，会警告并输出原始压缩流
+
+- **未压缩备份**：
+  - 不指定 `--compress` 时，直接保存或解包
+  - 使用 `--target-dir` 时，直接使用 `xbstream -x` 解包
+
+**注意：**
+- 如果 `--target-dir` 指定的目录已存在且不为空，程序会询问是否覆盖现有文件
+- 输入 `y` 或 `yes` 继续提取（可能覆盖现有文件）
+- 输入 `n` 或任何其他值取消提取并退出
+- 使用 `-y` 或 `--yes` 参数可以自动确认所有提示（非交互模式），适合脚本和自动化场景
+
+---
+
+### 3. 准备模式（PREPARE）
+
+备份完成后，需要执行 prepare 操作使备份可用于恢复。
+
+**基本用法：**
+
+```sh
+# 基本用法
+./backup-helper --prepare --target-dir=/path/to/backup
+
+# 指定并行线程数和内存大小
+./backup-helper --prepare --target-dir=/path/to/backup --parallel=8 --use-memory=2G
+
+# 使用配置文件
+./backup-helper --config config.json --prepare --target-dir=/path/to/backup
+
+# 可选：提供 MySQL 连接信息和 --defaults-file
+./backup-helper --prepare --target-dir=/path/to/backup \
+    --host=127.0.0.1 --user=root --port=3306 \
+    --defaults-file=/etc/my.cnf
+```
+
+**说明：**
+- `--target-dir`：必需，指定要准备的备份目录
+- `--parallel`：并行线程数，默认 4（可使用配置文件或在命令行指定）
+- `--use-memory`：准备操作使用的内存大小，默认 1G（支持单位：G, M, K）
+- `--defaults-file`：可选，手动指定 MySQL 配置文件路径（如果不指定，不会自动检测）
+
+---
+
+### 4. 预检查模式（CHECK）
+
+执行预检验证，可以单独使用或与其他模式组合使用。
+
+**基本用法：**
 
 ```sh
 # 单独使用：检查所有模式（BACKUP、DOWNLOAD、PREPARE）
@@ -266,148 +436,64 @@ nc 192.168.1.100 54321 > streamed-backup.xb
 - 如果预检查发现重大问题（ERROR），工具会停止执行并提示修复
 - 使用 `--check` 组合模式（如 `--check --backup`）时，只进行检查，不执行实际操作
 
-### 7. 仅做参数检查（不备份）
+---
+
+### 5. 已存在备份处理（EXISTED_BACKUP）
+
+上传或流式传输已存在的备份文件。
+
+**上传到 OSS：**
 
 ```sh
-./backup-helper --config config.json
-```
-
-### 8. 纯命令行参数（无 config.json）
-
-```sh
-./backup-helper --host=127.0.0.1 --user=root --password=123456 --port=3306 --backup --mode=oss --compress=qp
-```
-
-### 9. 上传已存在的备份文件到 OSS
-
-```sh
+# 上传本地备份文件到 OSS
 ./backup-helper --config config.json --existed-backup backup.xb --mode=oss
+
+# 从 stdin 读取并上传到 OSS
+cat backup.xb | ./backup-helper --config config.json --existed-backup - --mode=oss
+
+# 带压缩上传（注意：如果备份已压缩，此选项无效）
+./backup-helper --config config.json --existed-backup backup.xb --mode=oss --compress=zstd
 ```
 
-### 10. 通过 TCP 流式传输已存在的备份文件
+**通过 TCP 流式传输：**
 
 ```sh
+# 流式传输本地备份文件
 ./backup-helper --config config.json --existed-backup backup.xb --mode=stream --stream-port=9999
 # 另一个终端拉流
 nc 127.0.0.1 9999 > streamed-backup.xb
-```
 
-### 11. 使用 cat 命令从 stdin 读取并上传到 OSS
-
-```sh
-cat backup.xb | ./backup-helper --config config.json --existed-backup - --mode=oss
-```
-
-### 12. 使用 cat 命令从 stdin 读取并通过 TCP 传输
-
-```sh
+# 从 stdin 读取并通过 TCP 传输
 cat backup.xb | ./backup-helper --config config.json --existed-backup - --mode=stream --stream-port=9999
+
+# 主动推送到远程服务器
+./backup-helper --config config.json --existed-backup backup.xb \
+    --mode=stream --stream-host=192.168.1.100 --stream-port=9999
 ```
 
-### 13. 手动指定上传限速（如限制到 100 MB/s）
+**高级选项：**
 
 ```sh
-./backup-helper --config config.json --backup --mode=oss --io-limit 100MB/s
-# 支持单位：KB/s, MB/s, GB/s, TB/s，也可以直接使用字节/秒
+# 带限速上传
+./backup-helper --config config.json --existed-backup backup.xb --mode=oss --io-limit 100MB/s
+
+# 指定预估大小以显示准确进度
+./backup-helper --config config.json --existed-backup backup.xb --mode=oss --estimated-size 10GB
 ```
 
-### 14. 禁用限速（不限速上传）
+---
+
+### 6. 参数验证模式
+
+仅验证配置参数，不执行任何操作。
 
 ```sh
-./backup-helper --config config.json --backup --mode=oss --io-limit -1
-# 使用 -1 表示完全禁用限速，以最大速度上传
+# 使用配置文件验证参数
+./backup-helper --config config.json
+
+# 纯命令行参数验证
+./backup-helper --host=127.0.0.1 --user=root --password=123456 --port=3306
 ```
-
-### 15. 指定预估大小以显示准确的进度
-
-```sh
-./backup-helper --config config.json --backup --mode=oss --estimated-size 1GB
-# 支持单位：KB, MB, GB, TB，也可以直接使用字节
-# 例如：--estimated-size 1073741824 或 --estimated-size 1GB
-```
-
-### 15. 准备备份（Prepare Mode）
-
-备份完成后，需要执行 prepare 操作使备份可用于恢复：
-
-```sh
-# 基本用法
-./backup-helper --prepare --target-dir=/path/to/backup
-
-# 指定并行线程数和内存大小
-./backup-helper --prepare --target-dir=/path/to/backup --parallel=8 --use-memory=2G
-
-# 使用配置文件
-./backup-helper --config config.json --prepare --target-dir=/path/to/backup
-
-# 可选：提供 MySQL 连接信息和 --defaults-file
-./backup-helper --prepare --target-dir=/path/to/backup --host=127.0.0.1 --user=root --port=3306 --defaults-file=/etc/my.cnf
-```
-
-**说明**：
-- `--target-dir`：必需，指定要准备的备份目录
-- `--parallel`：并行线程数，默认 4（可使用配置文件或在命令行指定）
-- `--use-memory`：准备操作使用的内存大小，默认 1G（支持单位：G, M, K）
-- `--defaults-file`：可选，手动指定 MySQL 配置文件路径（如果不指定，不会自动检测）
-
-### 16. 下载模式：从 TCP 流接收备份数据
-
-```sh
-# 下载到默认文件（backup_YYYYMMDDHHMMSS.xb）
-./backup-helper --download --stream-port 9999
-
-# 下载到指定文件
-./backup-helper --download --stream-port 9999 --output my_backup.xb
-
-# 流式输出到 stdout（可用于管道压缩或解包）
-./backup-helper --download --stream-port 9999 --output - | zstd -d > backup.xb
-
-# 直接使用 xbstream 解包到目录（未压缩备份）
-./backup-helper --download --stream-port 9999 --output - | xbstream -x -C /path/to/extract/dir
-
-# Zstd 压缩备份：流式解压后解包（推荐方式）
-./backup-helper --download --stream-port 9999 --compress=zstd --target-dir /path/to/extract/dir
-
-# Zstd 压缩备份：流式输出到 stdout（可用于管道到 xbstream）
-./backup-helper --download --stream-port 9999 --compress=zstd --output - | xbstream -x -C /path/to/extract/dir
-
-# Qpress 压缩备份：自动解压和解包（注意：需要先保存文件，不支持流式解压）
-./backup-helper --download --stream-port 9999 --compress=qp --target-dir /path/to/extract/dir
-
-# 保存 zstd 压缩的备份（自动解压）
-./backup-helper --download --stream-port 9999 --compress=zstd --output my_backup.xb
-
-# 带限速下载
-./backup-helper --download --stream-port 9999 --io-limit 100MB/s
-
-# 带进度显示（需要提供预估大小）
-./backup-helper --download --stream-port 9999 --estimated-size 1GB
-
-# 非交互模式：自动确认所有提示
-./backup-helper --download --stream-port 9999 --target-dir /backup/mysql --compress=zstd -y
-```
-
-**注意**：
-- 如果 `--target-dir` 指定的目录已存在且不为空，程序会询问是否覆盖现有文件
-- 输入 `y` 或 `yes` 继续提取（可能覆盖现有文件）
-- 输入 `n` 或任何其他值取消提取并退出
-- 使用 `-y` 或 `--yes` 参数可以自动确认所有提示（非交互模式），适合脚本和自动化场景
-
-**下载模式压缩类型说明：**
-
-- **Zstd 压缩（`--compress=zstd`）**：
-  - 支持流式解压，可直接解压并解包到目录
-  - 使用 `--target-dir` 时，自动执行 `zstd -d | xbstream -x`
-  - 使用 `--output -` 时，输出解压后的流，可继续管道到 `xbstream`
-
-- **Qpress 压缩（`--compress=qp` 或 `--compress`）**：
-  - **不支持流式解压**（MySQL 5.7 的 xbstream 不支持 `--decompress` 流式操作）
-  - 使用 `--target-dir` 时，会先保存压缩文件，然后使用 `xbstream -x` 解包，最后使用 `xtrabackup --decompress` 解压
-  - 使用 `--output -` 时，会警告并输出原始压缩流
-
-- **未压缩备份**：
-  - 不指定 `--compress` 时，直接保存或解包
-  - 使用 `--target-dir` 时，直接使用 `xbstream -x` 解包
 
 ---
 
