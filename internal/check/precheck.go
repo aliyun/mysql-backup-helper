@@ -310,22 +310,32 @@ func CheckMySQLCompatibility(db *sql.DB, cfg *config.Config) []CheckResult {
 				status := "OK"
 				message := ""
 				if mysqlVer.Major == 5 && mysqlVer.Minor == 7 {
+					// MySQL 5.7 only supports xtrabackup 2.4
 					if xtrabackupVerParts[0] == 2 && xtrabackupVerParts[1] == 4 {
 						message = "MySQL 5.7 with xtrabackup 2.4, compatible"
 					} else {
-						status = "WARNING"
-						message = fmt.Sprintf("MySQL 5.7 recommends xtrabackup 2.4, but detected %d.%d", xtrabackupVerParts[0], xtrabackupVerParts[1])
+						status = "ERROR"
+						message = fmt.Sprintf("MySQL 5.7 only supports xtrabackup 2.4, but detected %d.%d. Please use xtrabackup 2.4 for MySQL 5.7", xtrabackupVerParts[0], xtrabackupVerParts[1])
 					}
 				} else if mysqlVer.Major == 8 && mysqlVer.Minor == 0 {
+					// MySQL 8.0 only supports xtrabackup 8.0
 					if xtrabackupVerParts[0] == 8 && xtrabackupVerParts[1] == 0 {
 						message = "MySQL 8.0 with xtrabackup 8.0, compatible"
 						if XtrabackupVersionGreaterOrEqual(xtrabackupVerParts, [4]int{8, 0, 34, 29}) {
 							message += " (Note: xtrabackup 8.0.34-29+, default zstd compression may cause recovery issues)"
 						}
 					} else {
-						status = "WARNING"
-						message = fmt.Sprintf("MySQL 8.0 recommends xtrabackup 8.0, but detected %d.%d", xtrabackupVerParts[0], xtrabackupVerParts[1])
+						status = "ERROR"
+						message = fmt.Sprintf("MySQL 8.0 only supports xtrabackup 8.0, but detected %d.%d. Please use xtrabackup 8.0 for MySQL 8.0", xtrabackupVerParts[0], xtrabackupVerParts[1])
 					}
+				} else if mysqlVer.Major == 0 && mysqlVer.Minor == 0 {
+					// MySQL version not detected or parsing failed
+					status = "ERROR"
+					message = fmt.Sprintf("MySQL version not detected or parsing failed. Detected xtrabackup %d.%d, cannot verify compatibility", xtrabackupVerParts[0], xtrabackupVerParts[1])
+				} else {
+					// Other MySQL versions (e.g., 5.6, 8.1, 8.4, etc.) are not supported
+					status = "ERROR"
+					message = fmt.Sprintf("MySQL %d.%d is not supported. Only MySQL 5.7 and 8.0 are supported", mysqlVer.Major, mysqlVer.Minor)
 				}
 
 				results = append(results, CheckResult{

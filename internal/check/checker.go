@@ -4,6 +4,7 @@ import (
 	"backup-helper/internal/config"
 	"backup-helper/internal/utils"
 	"fmt"
+	"os"
 	"os/exec"
 	"regexp"
 	"strconv"
@@ -171,14 +172,17 @@ func CheckXtraBackupVersion(mysqlVer config.Version, cfg *config.Config) {
 
 	// Verification
 	if mysqlVer.Major == 5 && mysqlVer.Minor == 7 {
+		// MySQL 5.7 only supports xtrabackup 2.4
 		if xtrabackupVerParts[0] == 2 && xtrabackupVerParts[1] == 4 {
 			msg := i18n.Sprintf("[OK] MySQL 5.7 detected xtrabackup 2.4 version, compatible")
 			i18n.Printf(color.GreenString("%s\n", msg))
 		} else {
-			msg := i18n.Sprintf("[Warning] MySQL 5.7 recommends xtrabackup 2.4, but detected version: %d.%d", xtrabackupVerParts[0], xtrabackupVerParts[1])
+			msg := i18n.Sprintf("[ERROR] MySQL 5.7 only supports xtrabackup 2.4, but detected %d.%d. Please use xtrabackup 2.4 for MySQL 5.7", xtrabackupVerParts[0], xtrabackupVerParts[1])
 			i18n.Printf(color.RedString("%s\n", msg))
+			os.Exit(1)
 		}
 	} else if mysqlVer.Major == 8 && mysqlVer.Minor == 0 {
+		// MySQL 8.0 only supports xtrabackup 8.0
 		if xtrabackupVerParts[0] == 8 && xtrabackupVerParts[1] == 0 {
 			msg := i18n.Sprintf("[OK] MySQL 8.0 detected xtrabackup 8.0 version, compatible")
 			i18n.Printf(color.GreenString("%s\n", msg))
@@ -187,9 +191,15 @@ func CheckXtraBackupVersion(mysqlVer config.Version, cfg *config.Config) {
 				i18n.Printf(color.YellowString("%s\n", hint))
 			}
 		} else {
-			msg := i18n.Sprintf("[Warning] MySQL 8.0 recommends xtrabackup 8.0, but detected version: %d.%d", xtrabackupVerParts[0], xtrabackupVerParts[1])
+			msg := i18n.Sprintf("[ERROR] MySQL 8.0 only supports xtrabackup 8.0, but detected %d.%d. Please use xtrabackup 8.0 for MySQL 8.0", xtrabackupVerParts[0], xtrabackupVerParts[1])
 			i18n.Printf(color.RedString("%s\n", msg))
+			os.Exit(1)
 		}
+	} else {
+		// Other MySQL versions (e.g., 5.6, 8.1, 8.4, etc.) are not supported
+		msg := i18n.Sprintf("[ERROR] MySQL %d.%d is not supported. Only MySQL 5.7 and 8.0 are supported", mysqlVer.Major, mysqlVer.Minor)
+		i18n.Printf(color.RedString("%s\n", msg))
+		os.Exit(1)
 	}
 }
 
