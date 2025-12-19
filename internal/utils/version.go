@@ -45,5 +45,9 @@ func GetVersionInfo() AppVersion {
 // PrintVersion prints version information
 func PrintVersion() {
 	version := GetVersion()
+	// Remove 'v' prefix if present to avoid double 'v' (e.g., vv1.0.0-beta)
+	if strings.HasPrefix(version, "v") {
+		version = version[1:]
+	}
 	println("MySQL Backup Helper v" + version)
 }
