@@ -91,7 +91,9 @@ func (s *TransferSession) LastTransition() (TransitionRecord, bool) {
 
 func (s *TransferSession) MarkProgress(n int64) {
 	s.bytes.Add(n)
-	s.lastProgressSinceStartNanos.Store(time.Since(s.startedAt).Nanoseconds())
+	if n > 0 {
+		s.lastProgressSinceStartNanos.Store(time.Since(s.startedAt).Nanoseconds())
+	}
 }
 
 func (s *TransferSession) Bytes() int64 {

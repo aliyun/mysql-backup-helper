@@ -140,6 +140,18 @@ func TestSessionIdleTimeout(t *testing.T) {
 	}
 }
 
+func TestSessionIdleTimeoutIgnoresZeroByteProgress(t *testing.T) {
+	s := NewTransferSession("receiver", "tcp://127.0.0.1:3306")
+
+	time.Sleep(120 * time.Millisecond)
+
+	s.MarkProgress(0)
+
+	if !s.IsIdleExceeded(50 * time.Millisecond) {
+		t.Fatal("expected zero-byte progress not to refresh idle timer")
+	}
+}
+
 func TestSessionCloseOwnership(t *testing.T) {
 	s := NewTransferSession("receiver", "tcp://127.0.0.1:3306")
 
