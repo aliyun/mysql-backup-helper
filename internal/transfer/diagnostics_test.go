@@ -4,6 +4,7 @@ import (
 	"errors"
 	"syscall"
 	"testing"
+	"strings"
 )
 
 func TestClassifyTransferError_BrokenPipe(t *testing.T) {
@@ -21,9 +22,26 @@ func TestClassifyTransferError_ConnReset(t *testing.T) {
 }
 
 func TestBuildTerminalSummary(t *testing.T) {
-	s := TransferSummary{SessionID: "abc123", Role: "sender", Code: ErrStreamBrokenPipe, Bytes: 1024, Phase: PhaseStreaming}
+	s := TransferSummary{SessionID: "abc123", Role: "sender", Code: ErrStreamBrokenPipe, Bytes: 1024, Phase: "streaming"}
 	out := BuildTerminalSummary(s)
-	if out == "" {
-		t.Fatal("expected non-empty summary")
+	if !strings.HasPrefix(out, "[transfer-summary]") {
+		t.Fatalf("expected stable prefix, got %q", out)
+	}
+
+	requiredFields := []string{
+		"session=",
+		"role=",
+		"endpoint=",
+		"phase=",
+		"code=",
+		"bytes=",
+		"elapsed_ms=",
+		"idle_ms=",
+		"cause=",
+	}
+	for _, field := range requiredFields {
+		if !strings.Contains(out, field) {
+			t.Fatalf("expected summary to contain %q, got %q", field, out)
+		}
 	}
 }

@@ -21,17 +21,11 @@ const (
 	ErrStreamUnknown     TransferErrorCode = "ERR_STREAM_UNKNOWN"
 )
 
-type SessionPhase string
-
-const (
-	PhaseStreaming SessionPhase = "streaming"
-)
-
 type TransferSummary struct {
 	SessionID string
 	Role      string
 	Endpoint  string
-	Phase     SessionPhase
+	Phase     string
 	Code      TransferErrorCode
 	Bytes     int64
 	ElapsedMS int64
@@ -44,16 +38,18 @@ func ClassifyTransferError(err error) TransferErrorCode {
 		return ""
 	}
 
+	errStr := strings.ToLower(err.Error())
+
 	var netErr net.Error
 	if errors.As(err, &netErr) && netErr.Timeout() {
 		return ErrConnectTimeout
 	}
 
-	if errors.Is(err, syscall.EPIPE) || strings.Contains(strings.ToLower(err.Error()), "broken pipe") {
+	if errors.Is(err, syscall.EPIPE) || strings.Contains(errStr, "broken pipe") {
 		return ErrStreamBrokenPipe
 	}
 
-	if errors.Is(err, syscall.ECONNRESET) || strings.Contains(strings.ToLower(err.Error()), "connection reset") {
+	if errors.Is(err, syscall.ECONNRESET) || strings.Contains(errStr, "connection reset") {
 		return ErrStreamConnReset
 	}
 
