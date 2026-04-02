@@ -54,7 +54,7 @@ func (s *TransferSession) Bytes() int64 {
 
 func (s *TransferSession) IsIdleExceeded(timeout time.Duration) bool {
 	if timeout <= 0 {
-		return true
+		return false
 	}
 
 	last := time.Unix(0, s.lastProgress.Load())

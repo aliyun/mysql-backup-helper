@@ -79,6 +79,8 @@ func ClassifyTransferErrorWithPhase(err error, phase SessionPhase) TransferError
 	var netErr net.Error
 	if errors.As(err, &netErr) && netErr.Timeout() {
 		switch phase {
+		case PhaseListening:
+			return ErrConnectTimeout
 		case PhaseConnecting:
 			return ErrConnectTimeout
 		case PhaseHandshaking:
