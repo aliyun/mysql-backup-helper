@@ -13,6 +13,12 @@ type TransferErrorCode string
 type SessionPhase string
 
 const (
+	PhaseConnecting  SessionPhase = "connecting"
+	PhaseHandshaking SessionPhase = "handshaking"
+	PhaseStreaming   SessionPhase = "streaming"
+)
+
+const (
 	ErrConnectTimeout    TransferErrorCode = "ERR_CONNECT_TIMEOUT"
 	ErrHandshakeTimeout  TransferErrorCode = "ERR_HANDSHAKE_TIMEOUT"
 	ErrHandshakeMismatch TransferErrorCode = "ERR_HANDSHAKE_MISMATCH"
@@ -58,7 +64,7 @@ func ClassifyTransferError(err error) TransferErrorCode {
 	return ErrStreamUnknown
 }
 
-func ClassifyTransferErrorWithPhase(err error, phase string) TransferErrorCode {
+func ClassifyTransferErrorWithPhase(err error, phase SessionPhase) TransferErrorCode {
 	if err == nil {
 		return ""
 	}
@@ -67,12 +73,12 @@ func ClassifyTransferErrorWithPhase(err error, phase string) TransferErrorCode {
 
 	var netErr net.Error
 	if errors.As(err, &netErr) && netErr.Timeout() {
-		switch strings.ToLower(strings.TrimSpace(phase)) {
-		case "connecting":
+		switch phase {
+		case PhaseConnecting:
 			return ErrConnectTimeout
-		case "handshaking":
+		case PhaseHandshaking:
 			return ErrHandshakeTimeout
-		case "streaming":
+		case PhaseStreaming:
 			return ErrStreamIdleTimeout
 		default:
 			return ErrStreamUnknown

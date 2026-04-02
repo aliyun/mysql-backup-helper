@@ -40,13 +40,13 @@ func TestClassifyTransferErrorWithPhase_Timeouts(t *testing.T) {
 
 	tests := []struct {
 		name  string
-		phase string
+		phase SessionPhase
 		want  TransferErrorCode
 	}{
-		{name: "connecting", phase: "connecting", want: ErrConnectTimeout},
-		{name: "handshaking", phase: "handshaking", want: ErrHandshakeTimeout},
-		{name: "streaming", phase: "streaming", want: ErrStreamIdleTimeout},
-		{name: "default", phase: "", want: ErrStreamUnknown},
+		{name: "connecting", phase: PhaseConnecting, want: ErrConnectTimeout},
+		{name: "handshaking", phase: PhaseHandshaking, want: ErrHandshakeTimeout},
+		{name: "streaming", phase: PhaseStreaming, want: ErrStreamIdleTimeout},
+		{name: "default", phase: SessionPhase(""), want: ErrStreamUnknown},
 	}
 
 	for _, tt := range tests {
@@ -63,7 +63,7 @@ func TestBuildTerminalSummary(t *testing.T) {
 		SessionID: "abc123",
 		Role:      "sender",
 		Endpoint:  "tcp://1.2.3.4:3306",
-		Phase:     SessionPhase("streaming"),
+		Phase:     PhaseStreaming,
 		Code:      ErrStreamBrokenPipe,
 		Bytes:     1024,
 		ElapsedMS: 12,
