@@ -2,9 +2,9 @@ package transfer
 
 import (
 	"errors"
+	"strings"
 	"syscall"
 	"testing"
-	"strings"
 )
 
 func TestClassifyTransferError_BrokenPipe(t *testing.T) {
@@ -21,27 +21,54 @@ func TestClassifyTransferError_ConnReset(t *testing.T) {
 	}
 }
 
+func TestClassifyTransferErrorWithPhase_Timeouts(t *testing.T) {
+	timeoutErr := &timeoutError{}
+
+	tests := []struct {
+		name  string
+		phase string
+		want  TransferErrorCode
+	}{
+		{name: "connecting", phase: "connecting", want: ErrConnectTimeout},
+		{name: "handshaking", phase: "handshaking", want: ErrHandshakeTimeout},
+		{name: "streaming", phase: "streaming", want: ErrStreamIdleTimeout},
+		{name: "default", phase: "", want: ErrStreamUnknown},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := ClassifyTransferErrorWithPhase(timeoutErr, tt.phase); got != tt.want {
+				t.Fatalf("expected %s, got %s", tt.want, got)
+			}
+		})
+	}
+}
+
 func TestBuildTerminalSummary(t *testing.T) {
-	s := TransferSummary{SessionID: "abc123", Role: "sender", Code: ErrStreamBrokenPipe, Bytes: 1024, Phase: "streaming"}
+	s := TransferSummary{
+		SessionID: "abc123",
+		Role:      "sender",
+		Endpoint:  "tcp://1.2.3.4:3306",
+		Phase:     "streaming",
+		Code:      ErrStreamBrokenPipe,
+		Bytes:     1024,
+		ElapsedMS: 12,
+		IdleMS:    34,
+		Cause:     "broken pipe",
+	}
 	out := BuildTerminalSummary(s)
 	if !strings.HasPrefix(out, "[transfer-summary]") {
 		t.Fatalf("expected stable prefix, got %q", out)
 	}
 
-	requiredFields := []string{
-		"session=",
-		"role=",
-		"endpoint=",
-		"phase=",
-		"code=",
-		"bytes=",
-		"elapsed_ms=",
-		"idle_ms=",
-		"cause=",
-	}
-	for _, field := range requiredFields {
-		if !strings.Contains(out, field) {
-			t.Fatalf("expected summary to contain %q, got %q", field, out)
-		}
+	expected := `[transfer-summary] session=abc123 role=sender endpoint=tcp://1.2.3.4:3306 phase=streaming code=ERR_STREAM_BROKEN_PIPE bytes=1024 elapsed_ms=12 idle_ms=34 cause="broken pipe"`
+	if out != expected {
+		t.Fatalf("expected %q, got %q", expected, out)
 	}
 }
+
+type timeoutError struct{}
+
+func (timeoutError) Error() string   { return "timeout" }
+func (timeoutError) Timeout() bool   { return true }
+func (timeoutError) Temporary() bool { return true }

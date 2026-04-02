@@ -34,6 +34,10 @@ type TransferSummary struct {
 }
 
 func ClassifyTransferError(err error) TransferErrorCode {
+	return ClassifyTransferErrorWithPhase(err, "")
+}
+
+func ClassifyTransferErrorWithPhase(err error, phase string) TransferErrorCode {
 	if err == nil {
 		return ""
 	}
@@ -42,7 +46,16 @@ func ClassifyTransferError(err error) TransferErrorCode {
 
 	var netErr net.Error
 	if errors.As(err, &netErr) && netErr.Timeout() {
-		return ErrConnectTimeout
+		switch strings.ToLower(strings.TrimSpace(phase)) {
+		case "connecting":
+			return ErrConnectTimeout
+		case "handshaking":
+			return ErrHandshakeTimeout
+		case "streaming":
+			return ErrStreamIdleTimeout
+		default:
+			return ErrStreamUnknown
+		}
 	}
 
 	if errors.Is(err, syscall.EPIPE) || strings.Contains(errStr, "broken pipe") {
