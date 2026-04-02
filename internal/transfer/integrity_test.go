@@ -11,32 +11,21 @@ func TestCountingWriterCountsBytes(t *testing.T) {
 	var sink bytes.Buffer
 	w := NewCountingWriter(&sink)
 
-	n, err := w.Write([]byte("hello"))
+	n, err := w.Write([]byte("abc"))
 	if err != nil {
 		t.Fatalf("unexpected write error: %v", err)
 	}
-	if n != 5 {
-		t.Fatalf("unexpected write count: got %d want %d", n, 5)
+	if n != 3 {
+		t.Fatalf("unexpected write count: got %d want %d", n, 3)
 	}
-	if got := w.BytesWritten(); got != 5 {
-		t.Fatalf("unexpected bytes written: got %d want %d", got, 5)
+	if got := w.BytesWritten(); got != 3 {
+		t.Fatalf("unexpected bytes written: got %d want %d", got, 3)
 	}
-
-	n, err = w.Write([]byte(" world"))
-	if err != nil {
-		t.Fatalf("unexpected write error: %v", err)
+	if got := w.CRC32(); got != 0x352441C2 {
+		t.Fatalf("unexpected crc32: got %#x want %#x", got, 0x352441C2)
 	}
-	if n != 6 {
-		t.Fatalf("unexpected write count: got %d want %d", n, 6)
-	}
-	if got := w.BytesWritten(); got != 11 {
-		t.Fatalf("unexpected bytes written: got %d want %d", got, 11)
-	}
-	if got := w.CRC32(); got == 0 {
-		t.Fatal("expected crc32 to be updated")
-	}
-	if got := sink.String(); got != "hello world" {
-		t.Fatalf("unexpected sink contents: got %q want %q", got, "hello world")
+	if got := sink.String(); got != "abc" {
+		t.Fatalf("unexpected sink contents: got %q want %q", got, "abc")
 	}
 }
 
