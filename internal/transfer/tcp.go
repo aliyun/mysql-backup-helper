@@ -4,6 +4,8 @@ import (
 	"backup-helper/internal/log"
 	"backup-helper/internal/progress"
 	"bufio"
+	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -11,6 +13,187 @@ import (
 	"strings"
 	"time"
 )
+
+const (
+	defaultTCPTimeoutSeconds = 60
+	maxTCPTimeoutSeconds     = 3600
+	handshakeTimeout         = 10 * time.Second
+)
+
+type sessionTrackingWriter struct {
+	counter *CountingWriter
+	session *TransferSession
+}
+
+func newSessionTrackingWriter(writer io.Writer, session *TransferSession) *sessionTrackingWriter {
+	return &sessionTrackingWriter{
+		counter: NewCountingWriter(writer),
+		session: session,
+	}
+}
+
+func (w *sessionTrackingWriter) Write(p []byte) (int, error) {
+	n, err := w.counter.Write(p)
+	if n > 0 {
+		w.session.MarkProgress(int64(n))
+	}
+	return n, err
+}
+
+func (w *sessionTrackingWriter) BytesWritten() int64 {
+	return w.counter.BytesWritten()
+}
+
+type sessionTrackingReader struct {
+	counter *CountingReader
+	session *TransferSession
+}
+
+func newSessionTrackingReader(reader io.Reader, session *TransferSession) *sessionTrackingReader {
+	return &sessionTrackingReader{
+		counter: NewCountingReader(reader),
+		session: session,
+	}
+}
+
+func (r *sessionTrackingReader) Read(p []byte) (int, error) {
+	n, err := r.counter.Read(p)
+	if n > 0 {
+		r.session.MarkProgress(int64(n))
+	}
+	return n, err
+}
+
+func (r *sessionTrackingReader) BytesRead() int64 {
+	return r.counter.BytesRead()
+}
+
+func normalizeTCPTimeoutSeconds(timeoutSeconds int) int {
+	if timeoutSeconds <= 0 {
+		return defaultTCPTimeoutSeconds
+	}
+	if timeoutSeconds > maxTCPTimeoutSeconds {
+		return maxTCPTimeoutSeconds
+	}
+	return timeoutSeconds
+}
+
+func mapHandshakeErrToCode(err error) TransferErrorCode {
+	if err == nil {
+		return ""
+	}
+
+	if errors.Is(err, context.DeadlineExceeded) {
+		return ErrHandshakeTimeout
+	}
+
+	var netErr net.Error
+	if errors.As(err, &netErr) && netErr.Timeout() {
+		return ErrHandshakeTimeout
+	}
+
+	errStr := strings.ToLower(err.Error())
+	if strings.Contains(errStr, "deadline exceeded") || strings.Contains(errStr, "timeout") || strings.Contains(errStr, "i/o timeout") {
+		return ErrHandshakeTimeout
+	}
+
+	if strings.Contains(errStr, "handshake failed") || strings.Contains(errStr, "invalid handshake") {
+		return ErrHandshakeMismatch
+	}
+
+	if code := ClassifyTransferErrorWithPhase(err, PhaseHandshaking); code != ErrStreamUnknown {
+		return code
+	}
+
+	return ErrStreamUnknown
+}
+
+func emitTCPTerminalSummary(logCtx *log.LogContext, session *TransferSession, bytes int64, code TransferErrorCode, cause string) {
+	if session == nil {
+		return
+	}
+
+	summary := BuildTerminalSummary(TransferSummary{
+		SessionID: session.id,
+		Role:      session.role,
+		Endpoint:  session.endpoint,
+		Phase:     session.Phase(),
+		Code:      code,
+		Bytes:     bytes,
+		ElapsedMS: int64(time.Since(session.startedAt) / time.Millisecond),
+		Cause:     cause,
+	})
+
+	fmt.Fprintln(os.Stderr, summary)
+	if logCtx != nil {
+		logCtx.WriteLog("TCP", "%s", summary)
+	}
+}
+
+func emitTCPFailure(logCtx *log.LogContext, session *TransferSession, bytes int64, code TransferErrorCode, err error) {
+	if session == nil {
+		return
+	}
+
+	session.Transition(PhaseFailed)
+	cause := ""
+	if err != nil {
+		cause = err.Error()
+	}
+	emitTCPTerminalSummary(logCtx, session, bytes, code, cause)
+}
+
+func closeTCPStream(session *TransferSession, tracker *progress.ProgressTracker, conn net.Conn, ln net.Listener, logCtx *log.LogContext, bytes int64, progressErr error) {
+	if session != nil && !session.TryAcquireCloseOwnership() {
+		return
+	}
+
+	code := TransferErrorCode("")
+	cause := ""
+	if progressErr != nil && progressErr != io.EOF {
+		code = ClassifyTransferErrorWithPhase(progressErr, PhaseStreaming)
+		cause = progressErr.Error()
+		if session != nil {
+			session.Transition(PhaseFailed)
+		}
+		if logCtx != nil {
+			logCtx.WriteLog("TCP", "Transfer interrupted: %v", progressErr)
+		}
+	} else {
+		if session != nil {
+			session.Transition(PhaseFinalizing)
+		}
+		if logCtx != nil {
+			logCtx.WriteLog("TCP", "Transfer completed")
+		}
+	}
+
+	if tracker != nil {
+		tracker.Complete()
+	}
+	if conn != nil {
+		_ = conn.Close()
+	}
+	if ln != nil {
+		_ = ln.Close()
+	}
+
+	if session != nil && code == "" {
+		session.Transition(PhaseDone)
+	}
+
+	emitTCPTerminalSummary(logCtx, session, bytes, code, cause)
+}
+
+func acceptListenerConnection(ln net.Listener, role string) (net.Conn, *TransferSession, error) {
+	conn, err := ln.Accept()
+	if err != nil {
+		return nil, nil, err
+	}
+
+	session := NewTransferSession(role, conn.RemoteAddr().String())
+	return conn, session, nil
+}
 
 // GetAvailablePort finds an available port by binding to port 0 and getting the assigned port
 func GetAvailablePort() (int, error) {
@@ -50,7 +233,6 @@ func StartStreamSender(port int, enableHandshake bool, handshakeKey string, tota
 	var actualPort int
 
 	if port == 0 {
-		// Auto-find available port
 		var err error
 		actualPort, err = GetAvailablePort()
 		if err != nil {
@@ -73,12 +255,16 @@ func StartStreamSender(port int, enableHandshake bool, handshakeKey string, tota
 		return nil, nil, nil, 0, "", fmt.Errorf("failed to listen on port %d: %v", actualPort, err)
 	}
 
-	// Get local IP and display connection info
 	localIP, err := GetLocalIP()
 	if err != nil {
-		localIP = "127.0.0.1" // fallback to localhost
+		localIP = "127.0.0.1"
 	}
 
+	listenEndpoint := fmt.Sprintf("%s:%d", localIP, actualPort)
+	listenSession := NewTransferSession("sender", listenEndpoint)
+	listenSession.Transition(PhaseListening)
+
+	timeoutSeconds = normalizeTCPTimeoutSeconds(timeoutSeconds)
 	fmt.Printf("[backup-helper] Listening on %s:%d\n", localIP, actualPort)
 	fmt.Printf("[backup-helper] Waiting for remote connection (timeout: %ds)...\n", timeoutSeconds)
 	if logCtx != nil {
@@ -86,90 +272,115 @@ func StartStreamSender(port int, enableHandshake bool, handshakeKey string, tota
 		logCtx.WriteLog("TCP", "Waiting for remote connection (timeout: %ds)", timeoutSeconds)
 	}
 
-	// Set timeout for accepting connections
-	if timeoutSeconds <= 0 {
-		timeoutSeconds = 60 // Default 60 seconds
-	}
-	if timeoutSeconds > 3600 {
-		timeoutSeconds = 3600 // Max 3600 seconds
-	}
 	timeout := time.Duration(timeoutSeconds) * time.Second
-	ln.(*net.TCPListener).SetDeadline(time.Now().Add(timeout))
+	_ = ln.(*net.TCPListener).SetDeadline(time.Now().Add(timeout))
 
-	// Create progress tracker
 	tracker := progress.NewProgressTrackerWithCompression(totalSize, isCompressed)
 
 	if !enableHandshake {
-		conn, err := ln.Accept()
+		conn, session, err := acceptListenerConnection(ln, "sender")
 		if err != nil {
 			ln.Close()
+			code := ClassifyTransferErrorWithPhase(err, listenSession.Phase())
 			if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
 				if logCtx != nil {
 					logCtx.WriteLog("TCP", "Connection timeout after %ds: %v", timeoutSeconds, err)
 				}
+				emitTCPFailure(logCtx, listenSession, 0, code, err)
 				return nil, nil, nil, 0, "", fmt.Errorf("connection timeout after %ds on port %d: %v", timeoutSeconds, actualPort, err)
 			}
 			if logCtx != nil {
 				logCtx.WriteLog("TCP", "Failed to accept connection: %v", err)
 			}
+			emitTCPFailure(logCtx, listenSession, 0, code, err)
 			return nil, nil, nil, 0, "", fmt.Errorf("failed to accept connection on port %d: %v", actualPort, err)
 		}
+
 		fmt.Println("[backup-helper] Remote client connected, no handshake required.")
 		if logCtx != nil {
 			logCtx.WriteLog("TCP", "Remote client connected, no handshake required")
 			logCtx.WriteLog("TCP", "Transfer started")
 		}
-		closer := func() { tracker.Complete(); conn.Close(); ln.Close() }
-		progressWriter := progress.NewProgressWriter(conn, tracker)
+
+		session.Transition(PhaseStreaming)
+		trackedWriter := newSessionTrackingWriter(conn, session)
+		progressWriter := progress.NewProgressWriter(trackedWriter, tracker)
+		closer := func() {
+			closeTCPStream(session, tracker, conn, ln, logCtx, trackedWriter.BytesWritten(), progressWriter.GetError())
+		}
 		return struct {
 			io.Writer
 			io.Closer
 		}{Writer: progressWriter, Closer: conn}, tracker, closer, actualPort, localIP, nil
 	}
+
 	for {
-		conn, err := ln.Accept()
+		conn, session, err := acceptListenerConnection(ln, "sender")
 		if err != nil {
+			ln.Close()
+			code := ClassifyTransferErrorWithPhase(err, listenSession.Phase())
+			if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
+				if logCtx != nil {
+					logCtx.WriteLog("TCP", "Connection timeout after %ds: %v", timeoutSeconds, err)
+				}
+				emitTCPFailure(logCtx, listenSession, 0, code, err)
+				return nil, nil, nil, 0, "", fmt.Errorf("connection timeout after %ds on port %d: %v", timeoutSeconds, actualPort, err)
+			}
 			if logCtx != nil {
 				logCtx.WriteLog("TCP", "Failed to accept connection: %v", err)
 			}
-			ln.Close()
+			emitTCPFailure(logCtx, listenSession, 0, code, err)
 			return nil, nil, nil, 0, "", fmt.Errorf("failed to accept connection on port %d: %v", actualPort, err)
 		}
+
 		fmt.Println("[backup-helper] Remote client connected, waiting for handshake...")
 		if logCtx != nil {
 			logCtx.WriteLog("TCP", "Remote client connected, waiting for handshake")
 		}
 
-		goAway := false
-		// set timeout to prevent from hanging
-		conn.SetReadDeadline(time.Now().Add(10 * time.Second))
+		session.Transition(PhaseHandshaking)
+		_ = conn.SetReadDeadline(time.Now().Add(handshakeTimeout))
 		reader := bufio.NewReader(conn)
 		line, err := reader.ReadString('\n')
 		if err != nil {
-			conn.Write([]byte("Please send handshake\n"))
-			goAway = true
-		} else {
-			line = strings.TrimSpace(line)
-			if line == handshakeKey {
-				conn.SetReadDeadline(time.Time{}) // cancel timeout
-				if logCtx != nil {
-					logCtx.WriteLog("TCP", "Handshake OK, transfer started")
-				}
-				closer := func() { tracker.Complete(); conn.Close(); ln.Close() }
-				progressWriter := progress.NewProgressWriter(conn, tracker)
-				return struct {
-					io.Writer
-					io.Closer
-				}{Writer: progressWriter, Closer: conn}, tracker, closer, actualPort, localIP, nil
-			} else {
-				conn.Write([]byte("Invalid handshake. Send the correct handshake to begin streaming.\n"))
-				goAway = true
+			_, _ = conn.Write([]byte("Please send handshake\n"))
+			if logCtx != nil {
+				logCtx.WriteLog("TCP", "Handshake failed: %v", err)
 			}
+			emitTCPFailure(logCtx, session, 0, mapHandshakeErrToCode(err), err)
+			_ = conn.Close()
+			_ = ln.Close()
+			return nil, nil, nil, 0, "", fmt.Errorf("handshake failed on port %d: %v", actualPort, err)
 		}
-		if goAway {
-			conn.Close()
-			continue
+
+		line = strings.TrimSpace(line)
+		if line != handshakeKey {
+			_, _ = conn.Write([]byte("Invalid handshake. Send the correct handshake to begin streaming.\n"))
+			mismatchErr := fmt.Errorf("handshake failed: received '%s' from %s, expected '%s'", line, conn.RemoteAddr().String(), handshakeKey)
+			if logCtx != nil {
+				logCtx.WriteLog("TCP", "Handshake failed: received '%s'", line)
+			}
+			emitTCPFailure(logCtx, session, 0, mapHandshakeErrToCode(mismatchErr), mismatchErr)
+			_ = conn.Close()
+			_ = ln.Close()
+			return nil, nil, nil, 0, "", mismatchErr
 		}
+
+		_ = conn.SetReadDeadline(time.Time{})
+		if logCtx != nil {
+			logCtx.WriteLog("TCP", "Handshake OK, transfer started")
+		}
+
+		session.Transition(PhaseStreaming)
+		trackedWriter := newSessionTrackingWriter(conn, session)
+		progressWriter := progress.NewProgressWriter(trackedWriter, tracker)
+		closer := func() {
+			closeTCPStream(session, tracker, conn, ln, logCtx, trackedWriter.BytesWritten(), progressWriter.GetError())
+		}
+		return struct {
+			io.Writer
+			io.Closer
+		}{Writer: progressWriter, Closer: conn}, tracker, closer, actualPort, localIP, nil
 	}
 }
 
@@ -185,19 +396,21 @@ func StartStreamClient(host string, port int, enableHandshake bool, handshakeKey
 	}
 
 	addr := fmt.Sprintf("%s:%d", host, port)
+	session := NewTransferSession("sender", addr)
 	fmt.Printf("[backup-helper] Connecting to %s...\n", addr)
 	if logCtx != nil {
 		logCtx.WriteLog("TCP", "Connecting to %s", addr)
 	}
 
-	// Create progress tracker
 	tracker := progress.NewProgressTrackerWithCompression(totalSize, isCompressed)
 
+	session.Transition(PhaseConnecting)
 	conn, err := net.DialTimeout("tcp", addr, 30*time.Second)
 	if err != nil {
 		if logCtx != nil {
 			logCtx.WriteLog("TCP", "Failed to connect to %s: %v", addr, err)
 		}
+		emitTCPFailure(logCtx, session, 0, ClassifyTransferErrorWithPhase(err, session.Phase()), err)
 		return nil, nil, nil, "", fmt.Errorf("failed to connect to %s: %v", addr, err)
 	}
 
@@ -210,66 +423,66 @@ func StartStreamClient(host string, port int, enableHandshake bool, handshakeKey
 		if logCtx != nil {
 			logCtx.WriteLog("TCP", "Transfer started (no handshake)")
 		}
+
+		session.Transition(PhaseStreaming)
+		trackedWriter := newSessionTrackingWriter(conn, session)
+		progressWriter := progress.NewProgressWriter(trackedWriter, tracker)
 		closer := func() {
-			tracker.Complete()
-			conn.Close()
-			if logCtx != nil {
-				logCtx.WriteLog("TCP", "Transfer completed")
-			}
+			closeTCPStream(session, tracker, conn, nil, logCtx, trackedWriter.BytesWritten(), progressWriter.GetError())
 		}
-		progressWriter := progress.NewProgressWriter(conn, tracker)
 		return struct {
 			io.Writer
 			io.Closer
 		}{Writer: progressWriter, Closer: conn}, tracker, closer, addr, nil
 	}
 
-	// Send handshake
+	session.Transition(PhaseHandshaking)
 	handshakeMsg := handshakeKey + "\n"
 	_, err = conn.Write([]byte(handshakeMsg))
 	if err != nil {
-		conn.Close()
+		_ = conn.Close()
 		if logCtx != nil {
 			logCtx.WriteLog("TCP", "Failed to send handshake: %v", err)
 		}
+		emitTCPFailure(logCtx, session, 0, mapHandshakeErrToCode(err), err)
 		return nil, nil, nil, "", fmt.Errorf("failed to send handshake to %s: %v", addr, err)
 	}
 
-	// Wait for handshake response
-	conn.SetReadDeadline(time.Now().Add(10 * time.Second))
+	_ = conn.SetReadDeadline(time.Now().Add(handshakeTimeout))
 	reader := bufio.NewReader(conn)
 	response, err := reader.ReadString('\n')
 	if err != nil {
-		conn.Close()
+		_ = conn.Close()
 		if logCtx != nil {
 			logCtx.WriteLog("TCP", "Failed to receive handshake response: %v", err)
 		}
+		emitTCPFailure(logCtx, session, 0, mapHandshakeErrToCode(err), err)
 		return nil, nil, nil, "", fmt.Errorf("failed to receive handshake response from %s: %v", addr, err)
 	}
 
 	response = strings.TrimSpace(response)
 	if response != "OK" && !strings.Contains(response, "OK") {
-		conn.Close()
+		err = fmt.Errorf("handshake failed: received '%s' from %s", response, addr)
+		_ = conn.Close()
 		if logCtx != nil {
 			logCtx.WriteLog("TCP", "Handshake failed: received '%s'", response)
 		}
-		return nil, nil, nil, "", fmt.Errorf("handshake failed: received '%s' from %s", response, addr)
+		emitTCPFailure(logCtx, session, 0, mapHandshakeErrToCode(err), err)
+		return nil, nil, nil, "", err
 	}
 
-	conn.SetReadDeadline(time.Time{}) // cancel timeout
+	_ = conn.SetReadDeadline(time.Time{})
 	fmt.Printf("[backup-helper] Handshake OK, start streaming backup to %s...\n", addr)
 	if logCtx != nil {
 		logCtx.WriteLog("TCP", "Handshake OK, transfer started")
 	}
 
+	session.Transition(PhaseStreaming)
+	trackedWriter := newSessionTrackingWriter(conn, session)
+	progressWriter := progress.NewProgressWriter(trackedWriter, tracker)
 	closer := func() {
-		tracker.Complete()
-		conn.Close()
-		if logCtx != nil {
-			logCtx.WriteLog("TCP", "Transfer completed")
-		}
+		closeTCPStream(session, tracker, conn, nil, logCtx, trackedWriter.BytesWritten(), progressWriter.GetError())
 	}
-	progressWriter := progress.NewProgressWriter(conn, tracker)
 	return struct {
 		io.Writer
 		io.Closer
@@ -289,19 +502,21 @@ func StartStreamClientReader(host string, port int, enableHandshake bool, handsh
 	}
 
 	addr := fmt.Sprintf("%s:%d", host, port)
+	session := NewTransferSession("receiver", addr)
 	fmt.Printf("[backup-helper] Connecting to %s...\n", addr)
 	if logCtx != nil {
 		logCtx.WriteLog("TCP", "Connecting to %s", addr)
 	}
 
-	// Create progress tracker
 	tracker := progress.NewDownloadProgressTracker(totalSize)
 
+	session.Transition(PhaseConnecting)
 	conn, err := net.DialTimeout("tcp", addr, 30*time.Second)
 	if err != nil {
 		if logCtx != nil {
 			logCtx.WriteLog("TCP", "Failed to connect to %s: %v", addr, err)
 		}
+		emitTCPFailure(logCtx, session, 0, ClassifyTransferErrorWithPhase(err, session.Phase()), err)
 		return nil, nil, nil, "", fmt.Errorf("failed to connect to %s: %v", addr, err)
 	}
 
@@ -314,65 +529,65 @@ func StartStreamClientReader(host string, port int, enableHandshake bool, handsh
 		if logCtx != nil {
 			logCtx.WriteLog("TCP", "Transfer started (no handshake)")
 		}
+
+		session.Transition(PhaseStreaming)
+		trackedReader := newSessionTrackingReader(conn, session)
+		progressReader := progress.NewProgressReader(trackedReader, tracker, 64*1024)
 		closer := func() {
-			tracker.Complete()
-			conn.Close()
-			if logCtx != nil {
-				logCtx.WriteLog("TCP", "Transfer completed")
-			}
+			closeTCPStream(session, tracker, conn, nil, logCtx, trackedReader.BytesRead(), progressReader.GetError())
 		}
-		progressReader := progress.NewProgressReader(conn, tracker, 64*1024)
 		return struct {
 			io.Reader
 			io.Closer
 		}{Reader: progressReader, Closer: conn}, tracker, closer, addr, nil
 	}
 
-	// Wait for handshake from server
-	conn.SetReadDeadline(time.Now().Add(10 * time.Second))
+	session.Transition(PhaseHandshaking)
+	_ = conn.SetReadDeadline(time.Now().Add(handshakeTimeout))
 	reader := bufio.NewReader(conn)
 	handshakeMsg, err := reader.ReadString('\n')
 	if err != nil {
-		conn.Close()
+		_ = conn.Close()
 		if logCtx != nil {
 			logCtx.WriteLog("TCP", "Failed to receive handshake: %v", err)
 		}
+		emitTCPFailure(logCtx, session, 0, mapHandshakeErrToCode(err), err)
 		return nil, nil, nil, "", fmt.Errorf("failed to receive handshake from %s: %v", addr, err)
 	}
 
 	handshakeMsg = strings.TrimSpace(handshakeMsg)
 	if handshakeMsg != handshakeKey {
-		conn.Close()
+		err = fmt.Errorf("handshake failed: received '%s' from %s, expected '%s'", handshakeMsg, addr, handshakeKey)
+		_ = conn.Close()
 		if logCtx != nil {
 			logCtx.WriteLog("TCP", "Handshake failed: received '%s', expected '%s'", handshakeMsg, handshakeKey)
 		}
-		return nil, nil, nil, "", fmt.Errorf("handshake failed: received '%s' from %s, expected '%s'", handshakeMsg, addr, handshakeKey)
+		emitTCPFailure(logCtx, session, 0, mapHandshakeErrToCode(err), err)
+		return nil, nil, nil, "", err
 	}
 
-	// Send OK response
 	_, err = conn.Write([]byte("OK\n"))
 	if err != nil {
-		conn.Close()
+		_ = conn.Close()
 		if logCtx != nil {
 			logCtx.WriteLog("TCP", "Failed to send handshake response: %v", err)
 		}
+		emitTCPFailure(logCtx, session, 0, mapHandshakeErrToCode(err), err)
 		return nil, nil, nil, "", fmt.Errorf("failed to send handshake response to %s: %v", addr, err)
 	}
 
-	conn.SetReadDeadline(time.Time{}) // cancel timeout
+	_ = conn.SetReadDeadline(time.Time{})
 	fmt.Printf("[backup-helper] Handshake OK, start receiving backup from %s...\n", addr)
 	if logCtx != nil {
 		logCtx.WriteLog("TCP", "Handshake OK, transfer started")
 	}
 
+	session.Transition(PhaseStreaming)
+	trackedReader := newSessionTrackingReader(reader, session)
+	progressReader := progress.NewProgressReader(trackedReader, tracker, 64*1024)
 	closer := func() {
-		tracker.Complete()
-		conn.Close()
-		if logCtx != nil {
-			logCtx.WriteLog("TCP", "Transfer completed")
-		}
+		closeTCPStream(session, tracker, conn, nil, logCtx, trackedReader.BytesRead(), progressReader.GetError())
 	}
-	progressReader := progress.NewProgressReader(conn, tracker, 64*1024)
 	return struct {
 		io.Reader
 		io.Closer
@@ -389,7 +604,6 @@ func StartStreamReceiver(port int, enableHandshake bool, handshakeKey string, to
 	var actualPort int
 
 	if port == 0 {
-		// Auto-find available port
 		var err error
 		actualPort, err = GetAvailablePort()
 		if err != nil {
@@ -412,12 +626,16 @@ func StartStreamReceiver(port int, enableHandshake bool, handshakeKey string, to
 		return nil, nil, nil, 0, "", fmt.Errorf("failed to listen on port %d: %v", actualPort, err)
 	}
 
-	// Get local IP and display connection info
 	localIP, err := GetLocalIP()
 	if err != nil {
-		localIP = "127.0.0.1" // fallback to localhost
+		localIP = "127.0.0.1"
 	}
 
+	listenEndpoint := fmt.Sprintf("%s:%d", localIP, actualPort)
+	listenSession := NewTransferSession("receiver", listenEndpoint)
+	listenSession.Transition(PhaseListening)
+
+	timeoutSeconds = normalizeTCPTimeoutSeconds(timeoutSeconds)
 	fmt.Fprintf(os.Stderr, "[backup-helper] Listening on %s:%d\n", localIP, actualPort)
 	fmt.Fprintf(os.Stderr, "[backup-helper] Waiting for remote connection (timeout: %ds)...\n", timeoutSeconds)
 	if logCtx != nil {
@@ -425,117 +643,125 @@ func StartStreamReceiver(port int, enableHandshake bool, handshakeKey string, to
 		logCtx.WriteLog("TCP", "Waiting for remote connection (timeout: %ds)", timeoutSeconds)
 	}
 
-	// Set timeout for accepting connections
-	if timeoutSeconds <= 0 {
-		timeoutSeconds = 60 // Default 60 seconds
-	}
-	if timeoutSeconds > 3600 {
-		timeoutSeconds = 3600 // Max 3600 seconds
-	}
 	timeout := time.Duration(timeoutSeconds) * time.Second
-	ln.(*net.TCPListener).SetDeadline(time.Now().Add(timeout))
+	_ = ln.(*net.TCPListener).SetDeadline(time.Now().Add(timeout))
 
-	// Create progress tracker for download mode
-	// Create progress tracker for download
 	tracker := progress.NewDownloadProgressTrackerWithCompression(totalSize, isCompressed)
 
 	if !enableHandshake {
-		conn, err := ln.Accept()
+		conn, session, err := acceptListenerConnection(ln, "receiver")
 		if err != nil {
 			ln.Close()
+			code := ClassifyTransferErrorWithPhase(err, listenSession.Phase())
 			if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
 				if logCtx != nil {
 					logCtx.WriteLog("TCP", "Connection timeout after %ds: %v", timeoutSeconds, err)
 				}
+				emitTCPFailure(logCtx, listenSession, 0, code, err)
 				return nil, nil, nil, 0, "", fmt.Errorf("connection timeout after %ds on port %d: %v", timeoutSeconds, actualPort, err)
 			}
 			if logCtx != nil {
 				logCtx.WriteLog("TCP", "Failed to accept connection: %v", err)
 			}
+			emitTCPFailure(logCtx, listenSession, 0, code, err)
 			return nil, nil, nil, 0, "", fmt.Errorf("failed to accept connection on port %d: %v", actualPort, err)
 		}
+
 		fmt.Fprintf(os.Stderr, "[backup-helper] Remote client connected, no handshake required.\n")
 		if logCtx != nil {
 			logCtx.WriteLog("TCP", "Remote client connected, no handshake required")
 			logCtx.WriteLog("TCP", "Transfer started")
 		}
-		progressReader := progress.NewProgressReader(conn, tracker, 64*1024)
+
+		session.Transition(PhaseStreaming)
+		trackedReader := newSessionTrackingReader(conn, session)
+		progressReader := progress.NewProgressReader(trackedReader, tracker, 64*1024)
 		closer := func() {
-			tracker.Complete()
-			conn.Close()
-			ln.Close()
-			if logCtx != nil {
-				// Check if transfer completed normally (check if reader encountered EOF or error)
-				if err := progressReader.GetError(); err != nil && err != io.EOF {
-					logCtx.WriteLog("TCP", "Transfer interrupted: connection closed unexpectedly: %v", err)
-				} else {
-					logCtx.WriteLog("TCP", "Transfer completed")
-				}
-			}
+			closeTCPStream(session, tracker, conn, ln, logCtx, trackedReader.BytesRead(), progressReader.GetError())
 		}
 		return struct {
 			io.Reader
 			io.Closer
 		}{Reader: progressReader, Closer: conn}, tracker, closer, actualPort, localIP, nil
 	}
+
 	for {
-		conn, err := ln.Accept()
+		conn, session, err := acceptListenerConnection(ln, "receiver")
 		if err != nil {
+			ln.Close()
+			code := ClassifyTransferErrorWithPhase(err, listenSession.Phase())
+			if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
+				if logCtx != nil {
+					logCtx.WriteLog("TCP", "Connection timeout after %ds: %v", timeoutSeconds, err)
+				}
+				emitTCPFailure(logCtx, listenSession, 0, code, err)
+				return nil, nil, nil, 0, "", fmt.Errorf("connection timeout after %ds on port %d: %v", timeoutSeconds, actualPort, err)
+			}
 			if logCtx != nil {
 				logCtx.WriteLog("TCP", "Failed to accept connection: %v", err)
 			}
-			ln.Close()
+			emitTCPFailure(logCtx, listenSession, 0, code, err)
 			return nil, nil, nil, 0, "", fmt.Errorf("failed to accept connection on port %d: %v", actualPort, err)
 		}
+
 		fmt.Fprintf(os.Stderr, "[backup-helper] Remote client connected, waiting for handshake...\n")
 		if logCtx != nil {
 			logCtx.WriteLog("TCP", "Remote client connected, waiting for handshake")
 		}
 
-		goAway := false
-		// set timeout to prevent from hanging
-		conn.SetReadDeadline(time.Now().Add(10 * time.Second))
+		session.Transition(PhaseHandshaking)
+		_ = conn.SetReadDeadline(time.Now().Add(handshakeTimeout))
 		reader := bufio.NewReader(conn)
 		line, err := reader.ReadString('\n')
 		if err != nil {
-			conn.Write([]byte("Please send handshake\n"))
-			goAway = true
-		} else {
-			line = strings.TrimSpace(line)
-			if line == handshakeKey {
-				conn.SetReadDeadline(time.Time{}) // cancel timeout
-				// Send OK response for handshake
-				conn.Write([]byte("OK\n"))
-				fmt.Fprintf(os.Stderr, "[backup-helper] Handshake OK, start receiving backup...\n")
-				if logCtx != nil {
-					logCtx.WriteLog("TCP", "Handshake OK, transfer started")
-				}
-				progressReader := progress.NewProgressReader(conn, tracker, 64*1024)
-				closer := func() {
-					tracker.Complete()
-					conn.Close()
-					ln.Close()
-					if logCtx != nil {
-						// Check if transfer completed normally (check if reader encountered EOF or error)
-						if err := progressReader.GetError(); err != nil && err != io.EOF {
-							logCtx.WriteLog("TCP", "Transfer interrupted: connection closed unexpectedly: %v", err)
-						} else {
-							logCtx.WriteLog("TCP", "Transfer completed")
-						}
-					}
-				}
-				return struct {
-					io.Reader
-					io.Closer
-				}{Reader: progressReader, Closer: conn}, tracker, closer, actualPort, localIP, nil
-			} else {
-				conn.Write([]byte("Invalid handshake. Send the correct handshake to begin streaming.\n"))
-				goAway = true
+			_, _ = conn.Write([]byte("Please send handshake\n"))
+			if logCtx != nil {
+				logCtx.WriteLog("TCP", "Handshake failed: %v", err)
 			}
+			emitTCPFailure(logCtx, session, 0, mapHandshakeErrToCode(err), err)
+			_ = conn.Close()
+			_ = ln.Close()
+			return nil, nil, nil, 0, "", fmt.Errorf("handshake failed on port %d: %v", actualPort, err)
 		}
-		if goAway {
-			conn.Close()
+
+		line = strings.TrimSpace(line)
+		if line != handshakeKey {
+			_, _ = conn.Write([]byte("Invalid handshake. Send the correct handshake to begin streaming.\n"))
+			mismatchErr := fmt.Errorf("handshake failed: received '%s' from %s, expected '%s'", line, conn.RemoteAddr().String(), handshakeKey)
+			if logCtx != nil {
+				logCtx.WriteLog("TCP", "Handshake failed: received '%s'", line)
+			}
+			emitTCPFailure(logCtx, session, 0, mapHandshakeErrToCode(mismatchErr), mismatchErr)
+			_ = conn.Close()
+			_ = ln.Close()
+			return nil, nil, nil, 0, "", mismatchErr
+		}
+
+		_, err = conn.Write([]byte("OK\n"))
+		if err != nil {
+			if logCtx != nil {
+				logCtx.WriteLog("TCP", "Failed to send handshake response: %v", err)
+			}
+			emitTCPFailure(logCtx, session, 0, mapHandshakeErrToCode(err), err)
+			_ = conn.Close()
 			continue
 		}
+
+		_ = conn.SetReadDeadline(time.Time{})
+		fmt.Fprintf(os.Stderr, "[backup-helper] Handshake OK, start receiving backup...\n")
+		if logCtx != nil {
+			logCtx.WriteLog("TCP", "Handshake OK, transfer started")
+		}
+
+		session.Transition(PhaseStreaming)
+		trackedReader := newSessionTrackingReader(reader, session)
+		progressReader := progress.NewProgressReader(trackedReader, tracker, 64*1024)
+		closer := func() {
+			closeTCPStream(session, tracker, conn, ln, logCtx, trackedReader.BytesRead(), progressReader.GetError())
+		}
+		return struct {
+			io.Reader
+			io.Closer
+		}{Reader: progressReader, Closer: conn}, tracker, closer, actualPort, localIP, nil
 	}
 }
