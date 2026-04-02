@@ -14,6 +14,18 @@ type TransitionRecord struct {
 	Metadata map[string]string
 }
 
+func copyTransitionMetadata(metadata map[string]string) map[string]string {
+	if metadata == nil {
+		return nil
+	}
+
+	copied := make(map[string]string, len(metadata))
+	for k, v := range metadata {
+		copied[k] = v
+	}
+	return copied
+}
+
 type TransferSession struct {
 	id                          string
 	role                        string
@@ -45,19 +57,11 @@ func (s *TransferSession) Transition(phase SessionPhase) {
 }
 
 func (s *TransferSession) TransitionWithMetadata(phase SessionPhase, metadata map[string]string) {
-	var metadataCopy map[string]string
-	if metadata != nil {
-		metadataCopy = make(map[string]string, len(metadata))
-		for k, v := range metadata {
-			metadataCopy[k] = v
-		}
-	}
-
 	record := TransitionRecord{
 		Phase:    phase,
 		At:       time.Now(),
 		Endpoint: s.endpoint,
-		Metadata: metadataCopy,
+		Metadata: copyTransitionMetadata(metadata),
 	}
 
 	s.mutex.Lock()
@@ -80,7 +84,9 @@ func (s *TransferSession) LastTransition() (TransitionRecord, bool) {
 		return TransitionRecord{}, false
 	}
 
-	return s.transitions[len(s.transitions)-1], true
+	record := s.transitions[len(s.transitions)-1]
+	record.Metadata = copyTransitionMetadata(record.Metadata)
+	return record, true
 }
 
 func (s *TransferSession) MarkProgress(n int64) {

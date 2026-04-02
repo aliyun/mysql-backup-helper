@@ -76,6 +76,44 @@ func TestSessionTransitionWithMetadata(t *testing.T) {
 	}
 }
 
+func TestSessionTransitionMetadataIsImmutable(t *testing.T) {
+	s := NewTransferSession("sender", "tcp://127.0.0.1:3306")
+
+	metadata := map[string]string{
+		"attempt": "1",
+	}
+
+	s.TransitionWithMetadata(PhaseFinalizing, metadata)
+
+	metadata["attempt"] = "2"
+	metadata["extra"] = "mutated"
+
+	record, ok := s.LastTransition()
+	if !ok {
+		t.Fatal("expected transition record to exist")
+	}
+	if record.Metadata["attempt"] != "1" {
+		t.Fatalf("stored metadata changed after caller mutation: got %q want %q", record.Metadata["attempt"], "1")
+	}
+	if _, ok := record.Metadata["extra"]; ok {
+		t.Fatal("stored metadata unexpectedly contains caller mutation")
+	}
+
+	record.Metadata["attempt"] = "3"
+	record.Metadata["extra"] = "returned"
+
+	next, ok := s.LastTransition()
+	if !ok {
+		t.Fatal("expected transition record to exist on second read")
+	}
+	if next.Metadata["attempt"] != "1" {
+		t.Fatalf("stored metadata changed after returned map mutation: got %q want %q", next.Metadata["attempt"], "1")
+	}
+	if _, ok := next.Metadata["extra"]; ok {
+		t.Fatal("stored metadata unexpectedly contains returned map mutation")
+	}
+}
+
 func TestSessionIdleTimeout(t *testing.T) {
 	s := NewTransferSession("receiver", "tcp://127.0.0.1:3306")
 
