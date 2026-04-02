@@ -34,6 +34,48 @@ func TestSessionTransitionSequence(t *testing.T) {
 	}
 }
 
+func TestSessionTransitionRecord(t *testing.T) {
+	s := NewTransferSession("sender", "tcp://127.0.0.1:3306")
+
+	s.Transition(PhaseStreaming)
+
+	record, ok := s.LastTransition()
+	if !ok {
+		t.Fatal("expected transition record to exist")
+	}
+	if record.Phase != PhaseStreaming {
+		t.Fatalf("transition phase mismatch: got %s want %s", record.Phase, PhaseStreaming)
+	}
+	if record.Endpoint != "tcp://127.0.0.1:3306" {
+		t.Fatalf("transition endpoint mismatch: got %s want %s", record.Endpoint, "tcp://127.0.0.1:3306")
+	}
+	if record.At.IsZero() {
+		t.Fatal("expected transition timestamp to be set")
+	}
+}
+
+func TestSessionTransitionWithMetadata(t *testing.T) {
+	s := NewTransferSession("sender", "tcp://127.0.0.1:3306")
+
+	metadata := map[string]string{
+		"attempt": "1",
+		"role":    "sender",
+	}
+
+	s.TransitionWithMetadata(PhaseFinalizing, metadata)
+
+	record, ok := s.LastTransition()
+	if !ok {
+		t.Fatal("expected transition record to exist")
+	}
+	if record.Phase != PhaseFinalizing {
+		t.Fatalf("transition phase mismatch: got %s want %s", record.Phase, PhaseFinalizing)
+	}
+	if record.Metadata["attempt"] != "1" || record.Metadata["role"] != "sender" {
+		t.Fatalf("transition metadata mismatch: got %#v want %#v", record.Metadata, metadata)
+	}
+}
+
 func TestSessionIdleTimeout(t *testing.T) {
 	s := NewTransferSession("receiver", "tcp://127.0.0.1:3306")
 

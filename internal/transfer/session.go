@@ -7,16 +7,24 @@ import (
 	"time"
 )
 
+type TransitionRecord struct {
+	Phase    SessionPhase
+	At       time.Time
+	Endpoint string
+	Metadata map[string]string
+}
+
 type TransferSession struct {
-	id                           string
-	role                         string
-	endpoint                     string
-	startedAt                    time.Time
-	lastProgressSinceStartNanos  atomic.Int64
-	bytes                        atomic.Int64
-	closeOwnership               atomic.Uint32
-	mutex                        sync.Mutex
-	phase                        SessionPhase
+	id                          string
+	role                        string
+	endpoint                    string
+	startedAt                   time.Time
+	lastProgressSinceStartNanos atomic.Int64
+	bytes                       atomic.Int64
+	closeOwnership              atomic.Uint32
+	mutex                       sync.Mutex
+	phase                       SessionPhase
+	transitions                 []TransitionRecord
 }
 
 func NewTransferSession(role, endpoint string) *TransferSession {
@@ -33,8 +41,28 @@ func NewTransferSession(role, endpoint string) *TransferSession {
 }
 
 func (s *TransferSession) Transition(phase SessionPhase) {
+	s.TransitionWithMetadata(phase, nil)
+}
+
+func (s *TransferSession) TransitionWithMetadata(phase SessionPhase, metadata map[string]string) {
+	var metadataCopy map[string]string
+	if metadata != nil {
+		metadataCopy = make(map[string]string, len(metadata))
+		for k, v := range metadata {
+			metadataCopy[k] = v
+		}
+	}
+
+	record := TransitionRecord{
+		Phase:    phase,
+		At:       time.Now(),
+		Endpoint: s.endpoint,
+		Metadata: metadataCopy,
+	}
+
 	s.mutex.Lock()
 	s.phase = phase
+	s.transitions = append(s.transitions, record)
 	s.mutex.Unlock()
 }
 
@@ -42,6 +70,17 @@ func (s *TransferSession) Phase() SessionPhase {
 	s.mutex.Lock()
 	defer s.mutex.Unlock()
 	return s.phase
+}
+
+func (s *TransferSession) LastTransition() (TransitionRecord, bool) {
+	s.mutex.Lock()
+	defer s.mutex.Unlock()
+
+	if len(s.transitions) == 0 {
+		return TransitionRecord{}, false
+	}
+
+	return s.transitions[len(s.transitions)-1], true
 }
 
 func (s *TransferSession) MarkProgress(n int64) {
