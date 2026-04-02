@@ -7,6 +7,12 @@ import (
 	"testing"
 )
 
+func TestClassifyTransferError_Nil(t *testing.T) {
+	if got := ClassifyTransferError(nil); got != "" {
+		t.Fatalf("expected empty code, got %s", got)
+	}
+}
+
 func TestClassifyTransferError_BrokenPipe(t *testing.T) {
 	err := errors.New("write tcp 1.1.1.1:1234->2.2.2.2:5678: broken pipe")
 	if got := ClassifyTransferError(err); got != ErrStreamBrokenPipe {
@@ -18,6 +24,14 @@ func TestClassifyTransferError_ConnReset(t *testing.T) {
 	err := syscall.ECONNRESET
 	if got := ClassifyTransferError(err); got != ErrStreamConnReset {
 		t.Fatalf("expected %s, got %s", ErrStreamConnReset, got)
+	}
+}
+
+func TestClassifyTransferError_Timeout(t *testing.T) {
+	timeoutErr := &timeoutError{}
+
+	if got := ClassifyTransferError(timeoutErr); got != ErrConnectTimeout {
+		t.Fatalf("expected %s, got %s", ErrConnectTimeout, got)
 	}
 }
 
@@ -49,7 +63,7 @@ func TestBuildTerminalSummary(t *testing.T) {
 		SessionID: "abc123",
 		Role:      "sender",
 		Endpoint:  "tcp://1.2.3.4:3306",
-		Phase:     "streaming",
+		Phase:     SessionPhase("streaming"),
 		Code:      ErrStreamBrokenPipe,
 		Bytes:     1024,
 		ElapsedMS: 12,

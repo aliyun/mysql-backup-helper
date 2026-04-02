@@ -10,6 +10,8 @@ import (
 
 type TransferErrorCode string
 
+type SessionPhase string
+
 const (
 	ErrConnectTimeout    TransferErrorCode = "ERR_CONNECT_TIMEOUT"
 	ErrHandshakeTimeout  TransferErrorCode = "ERR_HANDSHAKE_TIMEOUT"
@@ -25,7 +27,7 @@ type TransferSummary struct {
 	SessionID string
 	Role      string
 	Endpoint  string
-	Phase     string
+	Phase     SessionPhase
 	Code      TransferErrorCode
 	Bytes     int64
 	ElapsedMS int64
@@ -34,7 +36,26 @@ type TransferSummary struct {
 }
 
 func ClassifyTransferError(err error) TransferErrorCode {
-	return ClassifyTransferErrorWithPhase(err, "")
+	if err == nil {
+		return ""
+	}
+
+	errStr := strings.ToLower(err.Error())
+
+	var netErr net.Error
+	if errors.As(err, &netErr) && netErr.Timeout() {
+		return ErrConnectTimeout
+	}
+
+	if errors.Is(err, syscall.EPIPE) || strings.Contains(errStr, "broken pipe") {
+		return ErrStreamBrokenPipe
+	}
+
+	if errors.Is(err, syscall.ECONNRESET) || strings.Contains(errStr, "connection reset") {
+		return ErrStreamConnReset
+	}
+
+	return ErrStreamUnknown
 }
 
 func ClassifyTransferErrorWithPhase(err error, phase string) TransferErrorCode {
