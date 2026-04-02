@@ -349,7 +349,8 @@ func StartStreamSender(port int, enableHandshake bool, handshakeKey string, tota
 			}
 			emitTCPFailure(logCtx, session, 0, mapHandshakeErrToCode(err), err)
 			_ = conn.Close()
-			continue
+			_ = ln.Close()
+			return nil, nil, nil, 0, "", fmt.Errorf("handshake failed on port %d: %v", actualPort, err)
 		}
 
 		line = strings.TrimSpace(line)
@@ -361,7 +362,8 @@ func StartStreamSender(port int, enableHandshake bool, handshakeKey string, tota
 			}
 			emitTCPFailure(logCtx, session, 0, mapHandshakeErrToCode(mismatchErr), mismatchErr)
 			_ = conn.Close()
-			continue
+			_ = ln.Close()
+			return nil, nil, nil, 0, "", mismatchErr
 		}
 
 		_ = conn.SetReadDeadline(time.Time{})
@@ -718,7 +720,8 @@ func StartStreamReceiver(port int, enableHandshake bool, handshakeKey string, to
 			}
 			emitTCPFailure(logCtx, session, 0, mapHandshakeErrToCode(err), err)
 			_ = conn.Close()
-			continue
+			_ = ln.Close()
+			return nil, nil, nil, 0, "", fmt.Errorf("handshake failed on port %d: %v", actualPort, err)
 		}
 
 		line = strings.TrimSpace(line)
@@ -730,7 +733,8 @@ func StartStreamReceiver(port int, enableHandshake bool, handshakeKey string, to
 			}
 			emitTCPFailure(logCtx, session, 0, mapHandshakeErrToCode(mismatchErr), mismatchErr)
 			_ = conn.Close()
-			continue
+			_ = ln.Close()
+			return nil, nil, nil, 0, "", mismatchErr
 		}
 
 		_, err = conn.Write([]byte("OK\n"))

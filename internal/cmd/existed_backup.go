@@ -210,6 +210,8 @@ func HandleExistedBackup(cfg *config.Config, effective *config.EffectiveValues, 
 		_, err = io.Copy(finalWriter, reader)
 		if err != nil {
 			i18n.Printf("TCP stream error: %v\n", err)
+			// os.Exit bypasses deferred calls, so close explicitly to emit terminal summary/logs.
+			closer()
 			os.Exit(1)
 		}
 
