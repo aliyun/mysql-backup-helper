@@ -59,3 +59,17 @@ func TestSessionIdleTimeout(t *testing.T) {
 		t.Fatal("expected idle timeout to be exceeded after no progress")
 	}
 }
+
+func TestSessionCloseOwnership(t *testing.T) {
+	s := NewTransferSession("receiver", "tcp://127.0.0.1:3306")
+
+	if !s.TryAcquireCloseOwnership() {
+		t.Fatal("expected first close ownership acquisition to succeed")
+	}
+	if s.TryAcquireCloseOwnership() {
+		t.Fatal("expected second close ownership acquisition to fail")
+	}
+	if !s.HasCloseOwnership() {
+		t.Fatal("expected close ownership to be reported after acquisition")
+	}
+}

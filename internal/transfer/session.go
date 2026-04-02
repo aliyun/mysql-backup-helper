@@ -8,14 +8,15 @@ import (
 )
 
 type TransferSession struct {
-	id                       string
-	role                     string
-	endpoint                 string
-	startedAt                time.Time
-	lastProgressSinceStartNanos atomic.Int64
-	bytes                    atomic.Int64
-	mutex                    sync.Mutex
-	phase                    SessionPhase
+	id                           string
+	role                         string
+	endpoint                     string
+	startedAt                    time.Time
+	lastProgressSinceStartNanos  atomic.Int64
+	bytes                        atomic.Int64
+	closeOwnership               atomic.Uint32
+	mutex                        sync.Mutex
+	phase                        SessionPhase
 }
 
 func NewTransferSession(role, endpoint string) *TransferSession {
@@ -50,6 +51,14 @@ func (s *TransferSession) MarkProgress(n int64) {
 
 func (s *TransferSession) Bytes() int64 {
 	return s.bytes.Load()
+}
+
+func (s *TransferSession) TryAcquireCloseOwnership() bool {
+	return s.closeOwnership.CompareAndSwap(0, 1)
+}
+
+func (s *TransferSession) HasCloseOwnership() bool {
+	return s.closeOwnership.Load() == 1
 }
 
 func (s *TransferSession) IsIdleExceeded(timeout time.Duration) bool {
