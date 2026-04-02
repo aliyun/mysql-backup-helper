@@ -13,9 +13,14 @@ type TransferErrorCode string
 type SessionPhase string
 
 const (
+	PhaseInit        SessionPhase = "init"
+	PhaseListening   SessionPhase = "listening"
 	PhaseConnecting  SessionPhase = "connecting"
 	PhaseHandshaking SessionPhase = "handshaking"
 	PhaseStreaming   SessionPhase = "streaming"
+	PhaseFinalizing  SessionPhase = "finalizing"
+	PhaseDone        SessionPhase = "done"
+	PhaseFailed      SessionPhase = "failed"
 )
 
 const (
