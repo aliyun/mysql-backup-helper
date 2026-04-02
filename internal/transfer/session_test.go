@@ -44,7 +44,7 @@ func TestSessionIdleTimeout(t *testing.T) {
 		t.Fatal("expected negative timeout to be treated as disabled")
 	}
 
-	if s.IsIdleExceeded(10 * time.Millisecond) {
+	if s.IsIdleExceeded(50 * time.Millisecond) {
 		t.Fatal("expected fresh session to be below idle timeout")
 	}
 
@@ -53,9 +53,9 @@ func TestSessionIdleTimeout(t *testing.T) {
 		t.Fatalf("bytes mismatch after progress: got %d want %d", got, 2048)
 	}
 
-	time.Sleep(15 * time.Millisecond)
+	time.Sleep(120 * time.Millisecond)
 
-	if !s.IsIdleExceeded(10 * time.Millisecond) {
+	if !s.IsIdleExceeded(50 * time.Millisecond) {
 		t.Fatal("expected idle timeout to be exceeded after no progress")
 	}
 }

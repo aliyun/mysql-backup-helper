@@ -8,14 +8,14 @@ import (
 )
 
 type TransferSession struct {
-	id         string
-	role       string
-	endpoint   string
-	startedAt  time.Time
-	lastProgress atomic.Int64
-	bytes      atomic.Int64
-	mutex      sync.Mutex
-	phase      SessionPhase
+	id                       string
+	role                     string
+	endpoint                 string
+	startedAt                time.Time
+	lastProgressSinceStartNanos atomic.Int64
+	bytes                    atomic.Int64
+	mutex                    sync.Mutex
+	phase                    SessionPhase
 }
 
 func NewTransferSession(role, endpoint string) *TransferSession {
@@ -27,7 +27,7 @@ func NewTransferSession(role, endpoint string) *TransferSession {
 		startedAt: now,
 		phase:     PhaseInit,
 	}
-	s.lastProgress.Store(now.UnixNano())
+	s.lastProgressSinceStartNanos.Store(0)
 	return s
 }
 
@@ -45,7 +45,7 @@ func (s *TransferSession) Phase() SessionPhase {
 
 func (s *TransferSession) MarkProgress(n int64) {
 	s.bytes.Add(n)
-	s.lastProgress.Store(time.Now().UnixNano())
+	s.lastProgressSinceStartNanos.Store(time.Since(s.startedAt).Nanoseconds())
 }
 
 func (s *TransferSession) Bytes() int64 {
@@ -57,6 +57,5 @@ func (s *TransferSession) IsIdleExceeded(timeout time.Duration) bool {
 		return false
 	}
 
-	last := time.Unix(0, s.lastProgress.Load())
-	return time.Since(last) > timeout
+	return time.Since(s.startedAt).Nanoseconds()-s.lastProgressSinceStartNanos.Load() > timeout.Nanoseconds()
 }
