@@ -1,6 +1,6 @@
 APP_NAME=backup-helper
 
-.PHONY: all build install uninstall clean test version set-version get-version resolved-version
+.PHONY: all build install uninstall clean test test-stream-smoke version set-version get-version resolved-version
 
 all: build
 
@@ -51,3 +51,6 @@ clean:
 
 test:
 	bash ./test.sh
+
+test-stream-smoke:
+	bash ./scripts/stream_smoke.sh
