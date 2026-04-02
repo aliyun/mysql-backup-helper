@@ -1,6 +1,7 @@
 package transfer
 
 import (
+	"context"
 	"errors"
 	"strings"
 	"syscall"
@@ -17,6 +18,26 @@ func TestClassifyTransferError_BrokenPipe(t *testing.T) {
 	err := errors.New("write tcp 1.1.1.1:1234->2.2.2.2:5678: broken pipe")
 	if got := ClassifyTransferError(err); got != ErrStreamBrokenPipe {
 		t.Fatalf("expected %s, got %s", ErrStreamBrokenPipe, got)
+	}
+}
+
+func TestMapBrokenPipeToErrorCode(t *testing.T) {
+	err := errors.New("write: broken pipe")
+	if got := ClassifyTransferError(err); got != ErrStreamBrokenPipe {
+		t.Fatalf("expected %s, got %s", ErrStreamBrokenPipe, got)
+	}
+}
+
+func TestMapHandshakeTimeoutToErrorCode(t *testing.T) {
+	if got := mapHandshakeErrToCode(context.DeadlineExceeded); got != ErrHandshakeTimeout {
+		t.Fatalf("expected %s, got %s", ErrHandshakeTimeout, got)
+	}
+}
+
+func TestMapHandshakeMismatchToErrorCode(t *testing.T) {
+	err := errors.New("handshake failed: received 'bad-key' from 127.0.0.1:3306")
+	if got := mapHandshakeErrToCode(err); got != ErrHandshakeMismatch {
+		t.Fatalf("expected %s, got %s", ErrHandshakeMismatch, got)
 	}
 }
 
